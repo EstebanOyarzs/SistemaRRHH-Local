@@ -1,0 +1,38 @@
+# Backend - Sistema Web Local de Inteligencia Operacional
+# Python 3.12
+
+# Framework web
+fastapi
+uvicorn[standard]
+
+# Base de datos
+sqlalchemy
+alembic
+
+# Validacion / configuracion
+pydantic
+email-validator
+pydantic-settings
+python-dotenv
+
+# HTTP client (LM Studio)
+httpx
+
+# Autenticacion interna (usuarios/roles en SQLite)
+pyjwt
+passlib[bcrypt]
+# bcrypt>=4.1 elimino un atributo interno que passlib 1.7.4 todavia usa; se fija <4.1.
+bcrypt<4.1
+cryptography
+
+# Datos y reportes
+pandas
+openpyxl
+python-docx
+reportlab
+
+# Monitoreo de carpeta OneDrive sincronizada
+watchdog
+
+# Automatizacion de Outlook de escritorio (COM, sin Microsoft Graph)
+pywin32

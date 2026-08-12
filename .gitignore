@@ -1,0 +1,41 @@
+# Entornos virtuales
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Base de datos y datos locales
+data/*.db
+data/*.db-journal
+data/reportes/*
+!data/reportes/.gitkeep
+data/uploads/*
+!data/uploads/.gitkeep
+
+# Modelos IA (pesos, no versionar)
+models/*
+!models/.gitkeep
+
+# OneDrive sync (contenido local, no versionar)
+onedrive_sync/*
+!onedrive_sync/.gitkeep
+
+# Configuracion sensible
+.env
+*.env.local
+*.pem
+*.key
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log
