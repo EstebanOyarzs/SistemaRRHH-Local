@@ -12,6 +12,15 @@ data/reportes/*
 data/uploads/*
 !data/uploads/.gitkeep
 
+# Dashboards: DB propia con datos normalizados + planillas de origen
+# (contienen datos personales reales - RUT, nombres, sobretiempo por
+# empleado - no se versionan)
+Sobretiempo/data/*.db
+Sobretiempo/data/*.db-journal
+Sobretiempo/Archivos ejemplo/*.xlsx
+Sobretiempo/Archivos ejemplo/*.pptx
+Sobretiempo/Archivos ejemplo/*.html
+
 # Modelos IA (pesos, no versionar)
 models/*
 !models/.gitkeep

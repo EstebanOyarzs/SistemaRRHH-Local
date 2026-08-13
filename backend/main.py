@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.auth.router import router as auth_router
 from backend.config import settings
+from backend.dashboards.sobretiempo.router import router as sobretiempo_router
 
 app = FastAPI(title=settings.app_name)
 
@@ -22,3 +23,4 @@ def health():
 
 
 app.include_router(auth_router)
+app.include_router(sobretiempo_router)

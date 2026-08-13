@@ -1,0 +1,32 @@
+.dashboards-home__intro {
+  color: var(--color-gray-text);
+  margin-bottom: 1.25rem;
+}
+
+.dashboards-home__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.dashboards-home__card {
+  text-decoration: none;
+  color: inherit;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+  border-top: 4px solid var(--color-red);
+}
+
+.dashboards-home__card:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-2px);
+}
+
+.dashboards-home__card h3 {
+  color: var(--color-navy);
+}
+
+.dashboards-home__card p {
+  color: var(--color-gray-text);
+  font-size: 0.85rem;
+  margin: 0;
+}
