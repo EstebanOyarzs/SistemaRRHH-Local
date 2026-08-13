@@ -5,6 +5,8 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.auth.router import router as auth_router
 from backend.config import PROJECT_ROOT, settings
+from backend.dashboards.capacitacion.normalizar import sembrar_procedimientos_si_vacia
+from backend.dashboards.capacitacion.router import router as capacitacion_router
 from backend.dashboards.sobretiempo.router import router as sobretiempo_router
 
 app = FastAPI(title=settings.app_name)
@@ -26,6 +28,11 @@ def health():
 
 app.include_router(auth_router)
 app.include_router(sobretiempo_router)
+app.include_router(capacitacion_router)
+
+# Siembra la tabla maestra de procedimientos una sola vez (si esta vacia),
+# leyendo el Excel de referencia mas completo. Desde ahi se edita a mano.
+sembrar_procedimientos_si_vacia()
 
 # Sirve el build de produccion del frontend (frontend/dist, generado con
 # `vite build`) desde el mismo puerto que la API, para no tener que abrir

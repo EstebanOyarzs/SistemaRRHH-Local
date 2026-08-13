@@ -46,9 +46,15 @@ Hecho:
   Ver seccion "Acceso en red (LAN/VPN)" mas abajo — incluye pasos manuales
   pendientes del lado del usuario (IP fija, firewall, nombre `pda`).
 
+- **Segundo dashboard (Capacitación) — backend + frontend completos y probados**:
+  ver "Dashboard de Capacitación" más abajo para el detalle completo (difiere
+  del patrón de Sobretiempo en varios puntos: 2 archivos de dotación en vez
+  de 1, y una tabla maestra editable con clasificación calculada en vivo).
+
 Pendiente (orden sugerido, ver spec original del usuario para el detalle de cada módulo):
-1. Más planillas/dashboards siguiendo el mismo patrón que Sobretiempo (ver abajo),
-   agregando su card en `frontend/src/pages/DashboardsHomePage.tsx` y su ruta/pagina.
+1. Más planillas/dashboards siguiendo el mismo patrón que Sobretiempo/Capacitación
+   (ver abajo), agregando su card en `frontend/src/pages/DashboardsHomePage.tsx`
+   y su ruta/pagina.
 2. Integración LM Studio (Qwen 2.5 3B) para consultas IA e informes. Se evaluó
    (13-ago-2026) un chat de consultas sobre la DB de Sobretiempo con
    function-calling + SQL libre de solo lectura como respaldo — no se llegó a
@@ -126,6 +132,93 @@ Para Sobretiempo (control de horas extra vs. presupuesto) quedó así:
   "Resumen Ejecutivo", `resumen` → paneles "Control Mensual" y "Detalle por
   Responsable", `detalle` → panel "¿En qué se gastó?". Sirve de referencia
   para qué campos va a necesitar el futuro frontend.
+
+## Dashboard de Capacitación
+
+Segundo dashboard (14-ago-2026). Cruza la Dotación de Chilquinta y Filiales
+contra una tabla maestra Función→Códigos de procedimiento de capacitación,
+para saber a quién capacitar cada mes. Difiere del patrón de Sobretiempo en
+varios puntos — documentados acá porque no son obvios releyendo el código:
+
+- **Insumo mensual = 2 archivos, no 1**: la dotación del mes del reporte
+  ("actual") y la del mes anterior — necesarios para detectar cambios de
+  cargo por comparación. **Se suben ambos a mano** desde el botón
+  "Actualizar datos" del dashboard (2 `<input type="file">` + selector de
+  Mes/Año del reporte, prellenado parseando el nombre del archivo "actual"
+  — los nombres de mes en español no llevan tilde así que alcanza un
+  `.toLowerCase().includes()`, sin normalizar Unicode). El sistema **no lee
+  `Dotacion/` automáticamente**, aunque esa carpeta exista sincronizada
+  localmente — decisión explícita del usuario, no una limitación técnica.
+- **Columnas del Excel de dotación seleccionadas por POSICIÓN, no por
+  nombre**: la hoja "Detalle..." cambia de nombre mes a mes ("Detalle
+  Activos", "Detalle activos", "Detalle Chilquintas y Filiales") y sus
+  encabezados se leen con acentos corruptos según la codificación de
+  consola de Windows. Se verificó a mano que las 12 columnas necesarias
+  están en la MISMA posición (0,1,5,6,10,11,12,13,14,32,33,34) en los 5
+  archivos de 2026 disponibles a la fecha — `backend/dashboards/capacitacion/normalizar.py`
+  (`COL_POSICIONES`) depende de que esto se mantenga; si Talento Humano
+  cambia el formato del Excel de dotación (agrega/quita una columna antes
+  de la posición 34), hay que volver a mapear las posiciones.
+- **Tabla maestra Función→Código editable en el sistema**
+  (`capacitacion_procedimientos`, `Funcion` como PRIMARY KEY): se siembra
+  UNA SOLA VEZ, al arrancar el backend, leyendo la hoja "Procedimientos" del
+  Excel de referencia más completo (`Capacitacion/Archivos Ejemplo/Reporte
+  para capacitaciones - Mayo 2026.xlsx`, 572 funciones únicas — ese archivo
+  no se vuelve a tocar ni se referencia en ningún otro lado). De ahí en más
+  se edita a mano desde la UI (`PUT /dashboards/capacitacion/procedimientos`,
+  solo admin) — ya sea clasificando un "cargo a revisar" en el momento, o
+  editando/agregando una fila directamente en la sección colapsable "Tabla
+  maestra de procedimientos".
+- **La Clasificación de Procedimientos y los "cargos a revisar" se calculan
+  EN VIVO, nunca se guardan como snapshot**: `capacitacion_dotacion`,
+  `capacitacion_nuevos_ingresos` y `capacitacion_cambios_cargo` guardan la
+  dotación cruda (sin columna de clasificación); cada lectura
+  (`GET /dotacion`, `/nuevos-ingresos`, `/cambios-cargo`, `/exportar-excel`)
+  hace `LEFT JOIN` contra `capacitacion_procedimientos` al vuelo
+  (`_query_con_clasificacion` en `router.py`), y "cargos a revisar" es un
+  `LEFT JOIN ... WHERE p.Funcion IS NULL` (`_cargos_revisar_en_vivo`). Esto
+  fue un cambio de diseño respecto al primer intento (que guardaba la
+  clasificación calculada al momento de subir el Excel): con snapshot, un
+  admin clasificando un cargo nuevo no se veía reflejado en ningún lado
+  (ni en la Dotación completa ni en el Excel exportado) hasta la
+  **próxima carga mensual** — con cálculo en vivo, se refleja al instante
+  en todas las vistas apenas se guarda, sin tener que volver a subir nada.
+- **Criterios exactos** (verificados a mano contra
+  `Dotacion/2026/*.xlsx` y `Capacitacion/Archivos Ejemplo/*.xlsx`):
+  "Nuevos ingresos" = personas de la dotación actual cuya `Fecha_Ingreso`
+  cae en el Mes/Año del reporte (el que se eligió en el selector, no el mes
+  calendario actual). "Cambios de cargo" = personas presentes en ambas
+  dotaciones (mismo `Cod_Personal`) cuya `Funcion` difiere entre el mes
+  anterior y el actual — `Cargo_Anterior` es la función del mes anterior.
+  "Cargos a revisar" = funciones de la dotación actual que no existen en la
+  tabla maestra (a diferencia de una función que SÍ está en la tabla maestra
+  pero con el valor placeholder "Revisar si aplican procedimientos" — eso
+  es un cargo ya catalogado como sin-código-todavía, no aparece en esta
+  lista, es un estado normal que puede persistir).
+- **Excel exportado (`GET /exportar-excel`) generado 100% server-side con
+  openpyxl** (a diferencia del export HTML de Sobretiempo, que reusa el
+  bundle JS de la app en vivo) — arma un `.xlsx` real con las mismas 3 hojas
+  que `Capacitacion/Archivos Ejemplo/*.xlsx` (`Resumen` con las tablas de
+  Nuevos ingresos + Cambios de cargo apiladas, `Dotación CHTA`,
+  `Procedimientos`), devuelto como `StreamingResponse`. Nombre de archivo
+  `Reporte para capacitaciones - {Mes} {Año}.xlsx`, usando el
+  `Mes_Reporte`/`Anio_Reporte` guardados en `capacitacion_dotacion` (los
+  únicos 2 campos "no crudos" que sí persiste esa tabla).
+- **DB propia** `Capacitacion/data/capacitacion.db`, con
+  `Capacitacion/data/backups/` (respaldo antes de cada `/actualizar`,
+  igual que Sobretiempo) y `data/uploads/capacitacion/` (archiva ambos
+  Excel subidos, con timestamp).
+- `backend/dashboards/capacitacion/`: `db.py` (engine + nombres de tabla +
+  `CREATE TABLE IF NOT EXISTS` de la tabla maestra al importar), `normalizar.py`
+  (parsing + `sembrar_procedimientos_si_vacia()` + `procesar_archivos()`),
+  `schemas.py`, `router.py`. Montado en `backend/main.py` bajo
+  `/dashboards/capacitacion/...`; `sembrar_procedimientos_si_vacia()` se
+  llama una vez ahí mismo, después de montar el router.
+- Frontend: `frontend/src/pages/CapacitacionDashboardPage.tsx` +
+  `frontend/src/api/capacitacion.ts`. El helper genérico de tablas
+  ordenables (`Columna<T>`, `ordenarFilas`) se movió a
+  `frontend/src/utils/tablas.ts` (antes vivía duplicado dentro de
+  `SobretiempoDashboardPage.tsx`) para que ambos dashboards lo compartan.
 
 ## Frontend
 

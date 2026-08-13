@@ -5,6 +5,7 @@ import { AppLayout } from "./components/layout/AppLayout";
 import { LoginPage } from "./pages/LoginPage";
 import { DashboardsHomePage } from "./pages/DashboardsHomePage";
 import { SobretiempoDashboardPage } from "./pages/SobretiempoDashboardPage";
+import { CapacitacionDashboardPage } from "./pages/CapacitacionDashboardPage";
 
 // El dashboard tambien se usa standalone en el HTML exportado (sin
 // AuthProvider), asi que no puede llamar useAuth() el mismo — este wrapper
@@ -13,6 +14,11 @@ import { SobretiempoDashboardPage } from "./pages/SobretiempoDashboardPage";
 function SobretiempoDashboardRoute() {
   const { user } = useAuth();
   return <SobretiempoDashboardPage userRole={user?.role} />;
+}
+
+function CapacitacionDashboardRoute() {
+  const { user } = useAuth();
+  return <CapacitacionDashboardPage userRole={user?.role} />;
 }
 
 export function App() {
@@ -29,6 +35,7 @@ export function App() {
         >
           <Route path="/dashboards" element={<DashboardsHomePage />} />
           <Route path="/dashboards/sobretiempo" element={<SobretiempoDashboardRoute />} />
+          <Route path="/dashboards/capacitacion" element={<CapacitacionDashboardRoute />} />
         </Route>
         <Route path="/" element={<Navigate to="/dashboards" replace />} />
         <Route path="*" element={<Navigate to="/dashboards" replace />} />

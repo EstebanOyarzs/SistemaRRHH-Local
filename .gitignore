@@ -22,6 +22,11 @@ Sobretiempo/Archivos ejemplo/*.xlsx
 Sobretiempo/Archivos ejemplo/*.pptx
 Sobretiempo/Archivos ejemplo/*.html
 
+Capacitacion/data/*.db
+Capacitacion/data/*.db-journal
+Capacitacion/data/backups/
+Capacitacion/Archivos Ejemplo/*.xlsx
+
 # Modelos IA (pesos, no versionar)
 models/*
 !models/.gitkeep

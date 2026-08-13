@@ -1,0 +1,232 @@
+.capacitacion {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.capacitacion__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.capacitacion__subtitle {
+  color: var(--color-gray-text);
+  margin: 0 0 0.5rem;
+}
+
+.capacitacion section h2 {
+  border-left: 4px solid var(--color-red);
+  padding-left: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.capacitacion__export-action {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.capacitacion__export-action .btn {
+  padding: 0.55rem 1.25rem;
+  font-size: 0.8rem;
+}
+
+.capacitacion__btn-secundario {
+  background: var(--color-navy);
+}
+
+.capacitacion__btn-secundario:hover {
+  background: var(--color-navy-light);
+}
+
+.capacitacion__error {
+  color: var(--color-red);
+  font-weight: 600;
+}
+
+.capacitacion__ok {
+  color: var(--color-success);
+  font-weight: 600;
+  margin-top: 0.6rem;
+}
+
+.capacitacion__inline-error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.capacitacion__panel-actualizar {
+  margin-top: 0.75rem;
+  max-width: 620px;
+}
+
+.capacitacion__panel-actualizar h3 {
+  margin-top: 0;
+}
+
+.capacitacion__form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.85rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.capacitacion__form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-gray-text-dark);
+}
+
+.capacitacion__form-grid input,
+.capacitacion__form-grid select {
+  border: 1px solid var(--color-gray-border);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.capacitacion__form-grid--agregar {
+  grid-template-columns: 1fr 1fr auto;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+
+.capacitacion__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+}
+
+.capacitacion__filters input,
+.capacitacion__filters select {
+  border: 1px solid var(--color-gray-border);
+  border-radius: var(--radius-pill);
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  min-width: 220px;
+}
+
+.capacitacion__table-card {
+  margin-top: 0;
+}
+
+.capacitacion__table-wrap {
+  overflow-x: auto;
+}
+
+.capacitacion__table-wrap--scroll {
+  overflow-y: auto;
+  max-height: 520px;
+}
+
+.capacitacion__table-wrap--scroll thead th {
+  position: sticky;
+  top: 0;
+  background: var(--color-white);
+  z-index: 1;
+}
+
+.capacitacion__th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+}
+
+.capacitacion__th-sort:hover {
+  color: var(--color-red);
+}
+
+.capacitacion__sort-arrow {
+  display: inline-block;
+  width: 0.7em;
+  font-size: 0.7rem;
+  color: var(--color-red);
+}
+
+.capacitacion__td-editable {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.capacitacion__td-editable input {
+  border: 1px solid var(--color-gray-border);
+  border-radius: var(--radius-sm);
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+  min-width: 220px;
+}
+
+.capacitacion__btn-guardar {
+  padding: 0.35rem 0.9rem;
+  font-size: 0.75rem;
+}
+
+.capacitacion__toggle-seccion {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--color-navy);
+  cursor: pointer;
+  border-left: 4px solid var(--color-red);
+  padding-left: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.capacitacion__buscador-maestra {
+  border: 1px solid var(--color-gray-border);
+  border-radius: var(--radius-pill);
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.85rem;
+  min-width: 260px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+thead th {
+  text-align: left;
+  color: var(--color-gray-text);
+  font-weight: 600;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 2px solid var(--color-gray-border);
+  white-space: nowrap;
+}
+
+tbody td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--color-gray-border);
+  white-space: nowrap;
+}
+
+tbody tr:hover {
+  background: var(--color-gray-bg-alt);
+}

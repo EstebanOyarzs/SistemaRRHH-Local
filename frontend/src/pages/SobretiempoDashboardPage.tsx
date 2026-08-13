@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Bar, Doughnut, Line } from "react-chartjs-2";
 import ChartDataLabels, { type Context } from "chartjs-plugin-datalabels";
 import { CHART_COLORS } from "../charts/registerCharts";
@@ -15,6 +15,7 @@ import type { UserRole } from "../api/auth";
 import { ApiError } from "../api/client";
 import { formatCurrency } from "../utils/format";
 import { exportarDashboardHtml } from "../utils/exportarHtml";
+import { ordenarFilas, type Columna } from "../utils/tablas";
 import "./SobretiempoDashboardPage.css";
 
 function sum(values: number[]): number {
@@ -71,25 +72,6 @@ function agregarSaldoPorDimension(
   return Array.from(claves)
     .map((k) => [k, (presupuesto.get(k) ?? 0) - (real.get(k) ?? 0)] as [string, number])
     .sort((a, b) => a[1] - b[1]);
-}
-
-interface Columna<T> {
-  id: string;
-  label: string;
-  valor: (row: T) => string | number;
-  render: (row: T) => ReactNode;
-}
-
-function ordenarFilas<T>(rows: T[], columnas: Columna<T>[], columnaId: string, asc: boolean): T[] {
-  const columna = columnas.find((c) => c.id === columnaId) ?? columnas[0];
-  const factor = asc ? 1 : -1;
-  return [...rows].sort((a, b) => {
-    const va = columna.valor(a);
-    const vb = columna.valor(b);
-    if (va < vb) return -factor;
-    if (va > vb) return factor;
-    return 0;
-  });
 }
 
 const COLUMNAS_DETALLE: Columna<Resumen>[] = [

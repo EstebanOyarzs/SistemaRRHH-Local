@@ -7,6 +7,11 @@ const DASHBOARDS = [
     name: "Sobretiempo",
     description: "Control mensual de horas extra vs. presupuesto por gerencia.",
   },
+  {
+    slug: "capacitacion",
+    name: "Capacitación",
+    description: "Nuevos ingresos, cambios de cargo y clasificación de procedimientos de capacitación.",
+  },
 ];
 
 export function DashboardsHomePage() {
