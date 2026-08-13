@@ -4,6 +4,14 @@ from typing import Optional
 from pydantic import BaseModel
 
 
+class ActualizacionOut(BaseModel):
+    detalle: int
+    presupuesto: int
+    resumen: int
+    resumen_gerencia: int
+    backup: Optional[str] = None
+
+
 class DetalleOut(BaseModel):
     model_config = {"from_attributes": True}
 

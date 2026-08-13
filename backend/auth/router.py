@@ -14,12 +14,24 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    existente = crud.get_user_by_email(db, payload.email)
+    if existente and crud.esta_bloqueado(existente):
+        minutos = crud.minutos_restantes_bloqueo(existente)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Demasiados intentos fallidos. Volve a intentar en {minutos} minuto(s).",
+        )
+
     user = authenticate_user(db, payload.email, payload.password)
     if not user:
+        if existente:
+            crud.registrar_intento_fallido(db, existente)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email o contraseña incorrectos",
         )
+
+    crud.registrar_login_exitoso(db, user)
     token = create_access_token(subject=user.email, role=user.role.value)
     return TokenResponse(access_token=token)
 

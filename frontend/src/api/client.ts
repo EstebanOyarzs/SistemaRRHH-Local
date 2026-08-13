@@ -26,7 +26,11 @@ export class ApiError extends Error {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers = new Headers(options.headers);
-  headers.set("Content-Type", "application/json");
+  // Si el body es FormData, no se fija Content-Type: el navegador tiene que
+  // armar el "multipart/form-data; boundary=..." solo, a mano queda mal.
+  if (!(options.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
@@ -57,4 +61,8 @@ export function apiGet<T>(path: string, params?: Record<string, string | number 
 
 export function apiPost<T>(path: string, body: unknown): Promise<T> {
   return request<T>(path, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function apiUpload<T>(path: string, formData: FormData): Promise<T> {
+  return request<T>(path, { method: "POST", body: formData });
 }

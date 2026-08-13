@@ -4,6 +4,7 @@
 # Framework web
 fastapi
 uvicorn[standard]
+python-multipart
 
 # Base de datos
 sqlalchemy

@@ -23,6 +23,52 @@
   gap: 0.75rem;
 }
 
+.sobretiempo__export-action {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.sobretiempo__export-action .btn {
+  padding: 0.55rem 1.25rem;
+  font-size: 0.8rem;
+}
+
+.sobretiempo__btn-secundario {
+  background: var(--color-navy);
+}
+
+.sobretiempo__btn-secundario:hover {
+  background: var(--color-navy-light);
+}
+
+.sobretiempo__input-archivo {
+  display: none;
+}
+
+.sobretiempo__export-error,
+.sobretiempo__export-ok {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.sobretiempo__export-ok {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.sobretiempo__export-banner {
+  background: var(--color-gray-bg-alt);
+  border-left: 4px solid var(--color-navy);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  color: var(--color-navy);
+}
+
 .sobretiempo section h2 {
   border-left: 4px solid var(--color-red);
   padding-left: 0.6rem;

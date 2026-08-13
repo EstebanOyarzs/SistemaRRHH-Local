@@ -1,12 +1,15 @@
+import shutil
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
-from backend.auth.dependencies import get_current_user
-from backend.database.models import User
+from backend.auth.dependencies import get_current_user, require_roles
+from backend.config import PROJECT_ROOT
+from backend.database.models import User, UserRole
 from backend.dashboards.sobretiempo.db import (
     TABLE_DETALLE,
     TABLE_PRESUPUESTO,
@@ -14,12 +17,16 @@ from backend.dashboards.sobretiempo.db import (
     TABLE_RESUMEN_GERENCIA,
     engine,
 )
+from backend.dashboards.sobretiempo.normalizar import procesar_archivo
 from backend.dashboards.sobretiempo.schemas import (
+    ActualizacionOut,
     DetalleOut,
     PresupuestoOut,
     ResumenGerenciaOut,
     ResumenOut,
 )
+
+UPLOADS_DIR = PROJECT_ROOT / "data" / "uploads" / "sobretiempo"
 
 router = APIRouter(prefix="/dashboards/sobretiempo", tags=["dashboards:sobretiempo"])
 
@@ -113,3 +120,34 @@ def get_presupuesto(
     _user: User = Depends(get_current_user),
 ):
     return _query(TABLE_PRESUPUESTO, filters)
+
+
+@router.post("/actualizar", response_model=ActualizacionOut)
+async def actualizar_datos(
+    archivo: UploadFile = File(...),
+    _admin: User = Depends(require_roles(UserRole.ADMINISTRADOR)),
+):
+    """Sube el Excel mensual de "Control de Sobretiempo", lo normaliza y
+    reemplaza las 4 tablas — respaldando antes la base anterior. Solo admin,
+    porque pisa los datos que ven todos los usuarios del dashboard."""
+    if not archivo.filename or not archivo.filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="El archivo debe ser un Excel (.xlsx)")
+
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    destino = UPLOADS_DIR / f"{timestamp}_{archivo.filename}"
+    with destino.open("wb") as f:
+        shutil.copyfileobj(archivo.file, f)
+
+    try:
+        resultado = procesar_archivo(destino)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No se pudo procesar el archivo — revisa que tenga las hojas "
+                f"'DETALLE 2,0' y 'PPTO 2026' con el formato esperado. Detalle: {exc}"
+            ),
+        )
+
+    return resultado

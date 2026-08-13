@@ -1,4 +1,4 @@
-import { apiGet } from "./client";
+import { apiGet, apiUpload } from "./client";
 
 export interface SobretiempoFilters {
   anio?: number;
@@ -57,10 +57,13 @@ export interface Resumen {
 export interface Detalle {
   Cod_SAP: number;
   Nombre_Personal: string;
+  Sociedad: string;
   Gerencia: string;
   Subgerencia: string;
+  Unidad_Organizativa: string;
   Cargo: string;
   Ceco: string;
+  Cuenta_Contable: number;
   Concepto: string;
   Cantidad_Horas: number;
   Importe: number;
@@ -80,4 +83,18 @@ export function getResumen(filters: SobretiempoFilters = {}): Promise<Resumen[]>
 
 export function getDetalle(filters: SobretiempoFilters = {}): Promise<Detalle[]> {
   return apiGet<Detalle[]>("/dashboards/sobretiempo/detalle", { ...filters });
+}
+
+export interface ResultadoActualizacion {
+  detalle: number;
+  presupuesto: number;
+  resumen: number;
+  resumen_gerencia: number;
+  backup: string | null;
+}
+
+export function actualizarDatos(archivo: File): Promise<ResultadoActualizacion> {
+  const formData = new FormData();
+  formData.append("archivo", archivo);
+  return apiUpload<ResultadoActualizacion>("/dashboards/sobretiempo/actualizar", formData);
 }

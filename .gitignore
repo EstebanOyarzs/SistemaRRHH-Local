@@ -17,6 +17,7 @@ data/uploads/*
 # empleado - no se versionan)
 Sobretiempo/data/*.db
 Sobretiempo/data/*.db-journal
+Sobretiempo/data/backups/
 Sobretiempo/Archivos ejemplo/*.xlsx
 Sobretiempo/Archivos ejemplo/*.pptx
 Sobretiempo/Archivos ejemplo/*.html

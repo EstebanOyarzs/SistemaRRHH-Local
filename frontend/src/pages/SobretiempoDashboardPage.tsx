@@ -1,11 +1,20 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { Bar, Doughnut, Line } from "react-chartjs-2";
 import ChartDataLabels, { type Context } from "chartjs-plugin-datalabels";
 import { CHART_COLORS } from "../charts/registerCharts";
 import { SearchableSelect } from "../components/SearchableSelect";
-import { getDetalle, getResumen, type Detalle, type Resumen } from "../api/sobretiempo";
+import {
+  actualizarDatos,
+  getDetalle,
+  getResumen,
+  type Detalle,
+  type Resumen,
+  type ResultadoActualizacion,
+} from "../api/sobretiempo";
+import type { UserRole } from "../api/auth";
 import { ApiError } from "../api/client";
 import { formatCurrency } from "../utils/format";
+import { exportarDashboardHtml } from "../utils/exportarHtml";
 import "./SobretiempoDashboardPage.css";
 
 function sum(values: number[]): number {
@@ -124,11 +133,8 @@ const COLUMNAS_TRANSACCIONES: Columna<Detalle>[] = [
 
 type DimKey = "mes" | "sociedad" | "gerencia" | "subgerencia" | "unidad" | "ceco" | "cuenta";
 
-// Compara una fila de Resumen contra los filtros activos, salvo la dimension
-// "exclude": asi las opciones de un filtro reflejan lo que queda disponible
-// segun los OTROS filtros ya elegidos, sin autoeliminarse a si mismo.
-function rowMatches(row: Resumen, filtros: Record<DimKey, string>, exclude: DimKey): boolean {
-  const valores: Record<DimKey, string> = {
+function extraerValoresResumen(row: Resumen): Record<DimKey, string> {
+  return {
     mes: row.Mes_Nombre,
     sociedad: row.Sociedad,
     gerencia: row.Gerencia,
@@ -137,12 +143,48 @@ function rowMatches(row: Resumen, filtros: Record<DimKey, string>, exclude: DimK
     ceco: row.Ceco,
     cuenta: String(row.Cuenta_Contable),
   };
+}
+
+function extraerValoresDetalle(row: Detalle): Record<DimKey, string> {
+  return {
+    mes: row.Mes_Nombre,
+    sociedad: row.Sociedad,
+    gerencia: row.Gerencia,
+    subgerencia: row.Subgerencia,
+    unidad: row.Unidad_Organizativa,
+    ceco: row.Ceco,
+    cuenta: String(row.Cuenta_Contable),
+  };
+}
+
+// Compara una fila contra los filtros activos. Si se pasa "exclude", esa
+// dimension no se evalua (sirve para calcular las opciones de UN filtro sin
+// que se autoelimine sus propias opciones). Sin "exclude", filtra por TODAS
+// las dimensiones activas — es lo que se usa para armar los datos reales,
+// tanto pidiendolos al backend como (en un HTML exportado) filtrando en el
+// propio navegador contra el dataset completo embebido.
+function coincideConFiltros<T>(
+  row: T,
+  filtros: Record<DimKey, string>,
+  valoresFn: (row: T) => Record<DimKey, string>,
+  exclude?: DimKey,
+): boolean {
+  const valores = valoresFn(row);
   return (Object.keys(filtros) as DimKey[]).every(
     (key) => key === exclude || !filtros[key] || filtros[key] === valores[key],
   );
 }
 
-export function SobretiempoDashboardPage() {
+// Si estamos abriendo un HTML exportado (ver src/utils/exportarHtml.ts), esta
+// variable global viene con los datos completos embebidos y no hay backend
+// al que pedirle nada.
+const datosExportados = typeof window !== "undefined" ? window.__PDA_EXPORT__ : undefined;
+
+interface SobretiempoDashboardPageProps {
+  userRole?: UserRole;
+}
+
+export function SobretiempoDashboardPage({ userRole }: SobretiempoDashboardPageProps = {}) {
   const [resumen, setResumen] = useState<Resumen[]>([]);
   // Igual que resumen, pero sin el filtro de Mes: los paneles de tendencia
   // anual (Resumen Ejecutivo, Control Mensual) necesitan los 12 meses para
@@ -150,7 +192,8 @@ export function SobretiempoDashboardPage() {
   // seguir respetando el resto de los filtros (sociedad, gerencia, etc.).
   const [resumenAnual, setResumenAnual] = useState<Resumen[]>([]);
   const [detalle, setDetalle] = useState<Detalle[]>([]);
-  const [opciones, setOpciones] = useState<Resumen[]>([]);
+  const [opciones, setOpciones] = useState<Resumen[]>(datosExportados?.resumenCompleto ?? []);
+  const [detalleCompleto] = useState<Detalle[]>(datosExportados?.detalleCompleto ?? []);
 
   const [mesFiltro, setMesFiltro] = useState("");
   const [sociedadFiltro, setSociedadFiltro] = useState("");
@@ -168,16 +211,27 @@ export function SobretiempoDashboardPage() {
   const [ordenColumnaTx, setOrdenColumnaTx] = useState("importe");
   const [ordenAscTx, setOrdenAscTx] = useState(false);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!datosExportados);
   const [error, setError] = useState<string | null>(null);
+  const [exportando, setExportando] = useState(false);
+  const [errorExportar, setErrorExportar] = useState<string | null>(null);
+
+  const [actualizando, setActualizando] = useState(false);
+  const [errorActualizar, setErrorActualizar] = useState<string | null>(null);
+  const [resultadoActualizar, setResultadoActualizar] = useState<ResultadoActualizacion | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const inputArchivoRef = useRef<HTMLInputElement>(null);
 
   // Opciones de los filtros: se cargan una sola vez, sin filtrar, para que
   // las listas desplegables no se vacien a medida que se van aplicando filtros.
+  // En un HTML exportado ya vienen embebidas, no hace falta pedirlas.
   useEffect(() => {
+    if (datosExportados) return;
     getResumen({}).then(setOpciones).catch(() => undefined);
-  }, []);
+  }, [refreshKey]);
 
   useEffect(() => {
+    if (datosExportados) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -212,7 +266,27 @@ export function SobretiempoDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [mesFiltro, sociedadFiltro, gerenciaFiltro, subgerenciaFiltro, unidadFiltro, cecoFiltro, cuentaFiltro]);
+  }, [mesFiltro, sociedadFiltro, gerenciaFiltro, subgerenciaFiltro, unidadFiltro, cecoFiltro, cuentaFiltro, refreshKey]);
+
+  // Equivalente al fetch de arriba, pero filtrando 100% en el navegador
+  // contra los datasets completos embebidos — es lo que corre cuando el
+  // archivo exportado se abre sin backend.
+  useEffect(() => {
+    if (!datosExportados) return;
+    const filtros: Record<DimKey, string> = {
+      mes: mesFiltro,
+      sociedad: sociedadFiltro,
+      gerencia: gerenciaFiltro,
+      subgerencia: subgerenciaFiltro,
+      unidad: unidadFiltro,
+      ceco: cecoFiltro,
+      cuenta: cuentaFiltro,
+    };
+    const filtrosOrg: Record<DimKey, string> = { ...filtros, mes: "" };
+    setResumen(opciones.filter((r) => coincideConFiltros(r, filtros, extraerValoresResumen)));
+    setDetalle(detalleCompleto.filter((d) => coincideConFiltros(d, filtros, extraerValoresDetalle)));
+    setResumenAnual(opciones.filter((r) => coincideConFiltros(r, filtrosOrg, extraerValoresResumen)));
+  }, [opciones, detalleCompleto, mesFiltro, sociedadFiltro, gerenciaFiltro, subgerenciaFiltro, unidadFiltro, cecoFiltro, cuentaFiltro]);
 
   const filtrosActivos: Record<DimKey, string> = {
     mes: mesFiltro,
@@ -225,40 +299,40 @@ export function SobretiempoDashboardPage() {
   };
 
   const mesesDisponibles = useMemo(() => {
-    const filas = opciones.filter((r) => rowMatches(r, filtrosActivos, "mes"));
+    const filas = opciones.filter((r) => coincideConFiltros(r, filtrosActivos, extraerValoresResumen, "mes"));
     const presentes = new Set(filas.map((r) => r.Mes_Nombre));
     return MESES_ORDEN.filter((m) => presentes.has(m));
   }, [opciones, sociedadFiltro, gerenciaFiltro, subgerenciaFiltro, unidadFiltro, cecoFiltro, cuentaFiltro]);
 
   const sociedadesDisponibles = useMemo(
-    () => uniqueSorted(opciones.filter((r) => rowMatches(r, filtrosActivos, "sociedad")).map((r) => r.Sociedad)),
+    () => uniqueSorted(opciones.filter((r) => coincideConFiltros(r, filtrosActivos, extraerValoresResumen, "sociedad")).map((r) => r.Sociedad)),
     [opciones, mesFiltro, gerenciaFiltro, subgerenciaFiltro, unidadFiltro, cecoFiltro, cuentaFiltro],
   );
 
   const gerenciasDisponibles = useMemo(
-    () => uniqueSorted(opciones.filter((r) => rowMatches(r, filtrosActivos, "gerencia")).map((r) => r.Gerencia)),
+    () => uniqueSorted(opciones.filter((r) => coincideConFiltros(r, filtrosActivos, extraerValoresResumen, "gerencia")).map((r) => r.Gerencia)),
     [opciones, mesFiltro, sociedadFiltro, subgerenciaFiltro, unidadFiltro, cecoFiltro, cuentaFiltro],
   );
 
   const subgerenciasDisponibles = useMemo(
-    () => uniqueSorted(opciones.filter((r) => rowMatches(r, filtrosActivos, "subgerencia")).map((r) => r.Subgerencia)),
+    () => uniqueSorted(opciones.filter((r) => coincideConFiltros(r, filtrosActivos, extraerValoresResumen, "subgerencia")).map((r) => r.Subgerencia)),
     [opciones, mesFiltro, sociedadFiltro, gerenciaFiltro, unidadFiltro, cecoFiltro, cuentaFiltro],
   );
 
   const unidadesDisponibles = useMemo(
-    () => uniqueSorted(opciones.filter((r) => rowMatches(r, filtrosActivos, "unidad")).map((r) => r.Unidad_Organizativa)),
+    () => uniqueSorted(opciones.filter((r) => coincideConFiltros(r, filtrosActivos, extraerValoresResumen, "unidad")).map((r) => r.Unidad_Organizativa)),
     [opciones, mesFiltro, sociedadFiltro, gerenciaFiltro, subgerenciaFiltro, cecoFiltro, cuentaFiltro],
   );
 
   const cecosDisponibles = useMemo(
-    () => uniqueSorted(opciones.filter((r) => rowMatches(r, filtrosActivos, "ceco")).map((r) => r.Ceco)),
+    () => uniqueSorted(opciones.filter((r) => coincideConFiltros(r, filtrosActivos, extraerValoresResumen, "ceco")).map((r) => r.Ceco)),
     [opciones, mesFiltro, sociedadFiltro, gerenciaFiltro, subgerenciaFiltro, unidadFiltro, cuentaFiltro],
   );
 
   const cuentasDisponibles = useMemo(
     () =>
       uniqueSorted(
-        opciones.filter((r) => rowMatches(r, filtrosActivos, "cuenta")).map((r) => String(r.Cuenta_Contable)),
+        opciones.filter((r) => coincideConFiltros(r, filtrosActivos, extraerValoresResumen, "cuenta")).map((r) => String(r.Cuenta_Contable)),
       ),
     [opciones, mesFiltro, sociedadFiltro, gerenciaFiltro, subgerenciaFiltro, unidadFiltro, cecoFiltro],
   );
@@ -372,6 +446,37 @@ export function SobretiempoDashboardPage() {
     return { con, sin };
   }, [detalle]);
 
+  async function manejarExportar() {
+    setExportando(true);
+    setErrorExportar(null);
+    try {
+      await exportarDashboardHtml(opciones);
+    } catch (err) {
+      setErrorExportar(err instanceof Error ? err.message : "No se pudo exportar el reporte");
+    } finally {
+      setExportando(false);
+    }
+  }
+
+  async function manejarSeleccionArchivo(e: ChangeEvent<HTMLInputElement>) {
+    const archivo = e.target.files?.[0];
+    e.target.value = ""; // permite volver a elegir el mismo archivo si hace falta reintentar
+    if (!archivo) return;
+
+    setActualizando(true);
+    setErrorActualizar(null);
+    setResultadoActualizar(null);
+    try {
+      const resultado = await actualizarDatos(archivo);
+      setResultadoActualizar(resultado);
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      setErrorActualizar(err instanceof ApiError ? err.message : "No se pudo actualizar los datos");
+    } finally {
+      setActualizando(false);
+    }
+  }
+
   if (loading) {
     return <p>Cargando...</p>;
   }
@@ -382,10 +487,47 @@ export function SobretiempoDashboardPage() {
 
   return (
     <div className="sobretiempo">
+      {datosExportados && (
+        <div className="sobretiempo__export-banner">Reporte exportado el {datosExportados.generadoEl}.</div>
+      )}
+
       <div className="sobretiempo__header">
         <div>
           <h1>Sobretiempo</h1>
           <p className="sobretiempo__subtitle">Control mensual de horas extra vs. presupuesto</p>
+          {!datosExportados && (
+            <div className="sobretiempo__export-action">
+              <button type="button" className="btn" onClick={manejarExportar} disabled={exportando}>
+                {exportando ? "Generando..." : "Descargar reporte (HTML)"}
+              </button>
+              {userRole === "administrador" && (
+                <button
+                  type="button"
+                  className="btn sobretiempo__btn-secundario"
+                  onClick={() => inputArchivoRef.current?.click()}
+                  disabled={actualizando}
+                >
+                  {actualizando ? "Actualizando..." : "Actualizar datos (Excel)"}
+                </button>
+              )}
+              <input
+                ref={inputArchivoRef}
+                type="file"
+                accept=".xlsx"
+                className="sobretiempo__input-archivo"
+                onChange={manejarSeleccionArchivo}
+              />
+              {errorExportar && <p className="sobretiempo__error sobretiempo__export-error">{errorExportar}</p>}
+              {errorActualizar && <p className="sobretiempo__error sobretiempo__export-error">{errorActualizar}</p>}
+              {resultadoActualizar && (
+                <p className="sobretiempo__export-ok">
+                  Datos actualizados: {resultadoActualizar.detalle.toLocaleString("es-CL")} filas de detalle,{" "}
+                  {resultadoActualizar.resumen.toLocaleString("es-CL")} de resumen.
+                  {resultadoActualizar.backup && " Se guardó un respaldo de la base anterior."}
+                </p>
+              )}
+            </div>
+          )}
         </div>
         <div className="sobretiempo__filters">
           <SearchableSelect label="Mes" value={mesFiltro} options={mesesDisponibles} onChange={setMesFiltro} />

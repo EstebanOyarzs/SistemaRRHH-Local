@@ -41,10 +41,23 @@ Hecho:
   ver "Patrón de dashboards" más abajo para el detalle de arquitectura backend,
   y "Frontend" para el detalle de la UI (React, ya inicializado).
 
+- **Acceso multiusuario en LAN/VPN habilitado**: backend sirve tambien el build
+  de produccion del frontend (mismo puerto), login con limite de 5 intentos.
+  Ver seccion "Acceso en red (LAN/VPN)" mas abajo — incluye pasos manuales
+  pendientes del lado del usuario (IP fija, firewall, nombre `pda`).
+
 Pendiente (orden sugerido, ver spec original del usuario para el detalle de cada módulo):
 1. Más planillas/dashboards siguiendo el mismo patrón que Sobretiempo (ver abajo),
    agregando su card en `frontend/src/pages/DashboardsHomePage.tsx` y su ruta/pagina.
-2. Integración LM Studio (Qwen 2.5 3B) para consultas IA e informes.
+2. Integración LM Studio (Qwen 2.5 3B) para consultas IA e informes. Se evaluó
+   (13-ago-2026) un chat de consultas sobre la DB de Sobretiempo con
+   function-calling + SQL libre de solo lectura como respaldo — no se llegó a
+   implementar (el usuario canceló para priorizar el acceso en red), pero el
+   diseño acordado queda como referencia si se retoma: preferir
+   function-calling sobre los endpoints ya filtrados para preguntas de
+   saldo/presupuesto (la lógica de negocio ya validada no se le puede confiar
+   a un modelo de 3B), y dejar SQL libre (read-only, se le muestra la query
+   al usuario) solo para preguntas descriptivas que los endpoints no cubren.
 3. Automatización Outlook vía pywin32/COM (backend/email/).
 4. Generación de reportes Excel/Word/PDF (backend/reports/).
 5. Roles: por ahora solo se usa el rol `administrador` (decision del usuario,
@@ -56,14 +69,32 @@ Pendiente (orden sugerido, ver spec original del usuario para el detalle de cada
 Cada dashboard es una planilla mensual que se normaliza y se carga a SQLite.
 Para Sobretiempo (control de horas extra vs. presupuesto) quedó así:
 
-- **`Sobretiempo/`** (carpeta en la raíz del proyecto, junto a `backend/` y
-  `frontend/`): solo el ETL. `normalizar_sobretiempo.py` lee el Excel bruto
-  mensual ("Control de Sobretiempo 2026.xlsx", hojas `DETALLE 2,0` y
-  `PPTO 2026`) y carga 4 tablas a una SQLite propia
-  (`Sobretiempo/data/sobretiempo.db`), reemplazándolas por completo en cada
-  corrida (el Excel de origen ya trae el acumulado del año, no hace falta
-  mergear). Uso mensual:
-  `venv\Scripts\python.exe Sobretiempo\normalizar_sobretiempo.py "ruta\archivo.xlsx"`.
+- **Actualización mensual — dos formas, misma lógica** (definido con el
+  usuario 13-ago-2026): la lógica de parsing/normalización (leer el Excel
+  bruto "Control de Sobretiempo 2026.xlsx", hojas `DETALLE 2,0` y
+  `PPTO 2026`, y armar las 4 tablas) vive en un solo lugar,
+  `backend/dashboards/sobretiempo/normalizar.py` — nunca se duplica.
+  1. **Botón "Actualizar datos (Excel)" en el dashboard** (solo visible para
+     rol `administrador`): sube el Excel a `POST /dashboards/sobretiempo/actualizar`
+     (multipart), el backend lo procesa y refresca el dashboard sin recargar
+     la página. Es el flujo normal de uso.
+  2. **`Sobretiempo/normalizar_sobretiempo.py`** (linea de comandos): wrapper
+     delgado que llama a la misma funcion `procesar_archivo()` — uso de
+     respaldo si no se tiene acceso a la pagina:
+     `venv\Scripts\python.exe Sobretiempo\normalizar_sobretiempo.py "ruta\archivo.xlsx"`.
+
+  Cada corrida (por cualquiera de las dos vías) REEMPLAZA por completo las 4
+  tablas (el Excel de origen ya trae el acumulado del año, no hace falta
+  mergear), pero **antes respalda la base anterior** en
+  `Sobretiempo/data/backups/sobretiempo_<fecha>_<hora>.db` — si el archivo
+  nuevo resulta tener un problema, se puede volver a copiar ese respaldo
+  sobre `Sobretiempo/data/sobretiempo.db` mientras se soluciona (no hay botón
+  de restaurar en la UI todavía, es copiar el archivo a mano). El Excel
+  subido tambien queda archivado en `data/uploads/sobretiempo/` con
+  timestamp, para trazabilidad de que archivo genero cada carga. Si el Excel
+  tiene un formato inesperado (falta una hoja/columna), `procesar_archivo()`
+  tira la excepcion ANTES de respaldar/reemplazar nada — la base vieja queda
+  intacta y el usuario ve el error en el momento.
   `Sobretiempo/Archivos ejemplo/` tiene los insumos de referencia originales
   (Excel bruto, Excel normalizado viejo, HTML de ejemplo, script viejo que
   exportaba a Excel) — son solo referencia, no se tocan.
@@ -76,15 +107,20 @@ Para Sobretiempo (control de horas extra vs. presupuesto) quedó así:
   dashboards, aunque puedan cruzarse en queries a futuro.
 - **`backend/dashboards/sobretiempo/`**: acá vive el código que sí se integra
   al sistema central — `db.py` (engine SQLAlchemy apuntando al .db de arriba
-  + constantes de nombre de tabla), `schemas.py` (Pydantic, un modelo por
-  tabla con todas las columnas) y `router.py` (4 endpoints GET, uno por
-  tabla, con filtros opcionales `anio`/`mes`/`sociedad`/`gerencia`/
-  `subgerencia`/`unidad`/`ceco`/`cuenta`, protegidos con `get_current_user`
-  — cualquier rol autenticado puede leer). `TABLE_COLUMNS` en `router.py`
-  define qué filtros aplican a cada tabla (`sobretiempo_resumen_gerencia`
-  solo tiene Gerencia+Subgerencia+Mes, así que ahí se ignoran silenciosamente
-  los filtros que no le aplican en vez de romper el SQL). Montado en
-  `backend/main.py` bajo `/dashboards/sobretiempo/...`.
+  + constantes de nombre de tabla), `normalizar.py` (la logica de
+  parsing/normalizacion, ver arriba — `respaldar_db()` + `procesar_archivo()`),
+  `schemas.py` (Pydantic, un modelo por tabla con todas las columnas) y
+  `router.py` (4 endpoints GET, uno por tabla, con filtros opcionales
+  `anio`/`mes`/`sociedad`/`gerencia`/`subgerencia`/`unidad`/`ceco`/`cuenta`,
+  protegidos con `get_current_user` — cualquier rol autenticado puede leer;
+  + `POST /actualizar`, protegido con `require_roles(ADMINISTRADOR)`, recibe
+  el Excel subido). `TABLE_COLUMNS` en `router.py` define qué filtros aplican
+  a cada tabla (`sobretiempo_resumen_gerencia` solo tiene Gerencia+
+  Subgerencia+Mes, así que ahí se ignoran silenciosamente los filtros que no
+  le aplican en vez de romper el SQL). Montado en `backend/main.py` bajo
+  `/dashboards/sobretiempo/...`. Requiere `python-multipart` (ya en
+  `requirements.txt`) para los uploads — si falta, FastAPI tira
+  `RuntimeError` recien al registrar la ruta, no al arrancar.
 - El HTML de ejemplo (`Sobretiempo_Dashboard.html`, Chart.js con los datos
   embebidos) mapea 1 a 1 con las 4 tablas: `resumenGerencia` → panel
   "Resumen Ejecutivo", `resumen` → paneles "Control Mensual" y "Detalle por
@@ -140,12 +176,95 @@ Decisiones tomadas con el usuario (13-ago-2026):
     la lista COMPLETA (sin top-N) en un contenedor con scroll vertical + header sticky
     (`.sobretiempo__table-wrap--scroll` + `--rows15`/`--rows10` según cuántas filas se
     quieren ver sin scrollear).
+  - **Botón "Descargar reporte (HTML)"** (`src/utils/exportarHtml.ts`): arma un HTML
+    autocontenido reutilizando el MISMO bundle JS/CSS que la app en vivo (lo lee del propio
+    `<script>`/`<link>` de la pagina, `document.querySelector('script[type="module"][src*="/assets/"]')`)
+    + los datos completos embebidos (`window.__PDA_EXPORT__`) en vez de pedirlos a la API.
+    `main.tsx` detecta esa variable global al cargar y renderiza `SobretiempoDashboardPage`
+    sola (sin login/routing); la pagina detecta lo mismo y hace TODO el filtrado client-side
+    contra los datos embebidos (mismo helper `coincideConFiltros` que usa para las opciones
+    de los filtros). Por eso el archivo exportado conserva los 7 filtros funcionando
+    offline. Solo funciona exportando desde el build de producción (necesita un
+    `<script src="/assets/...">` real) — no desde el dev server de Vite.
+  - **Botón "Actualizar datos (Excel)"** (solo rol `administrador`, prop `userRole` pasada
+    desde un wrapper en `App.tsx` que sí puede usar `useAuth()` — el dashboard en sí no,
+    porque también corre standalone en el HTML exportado sin `AuthProvider`): sube el Excel
+    a `POST /dashboards/sobretiempo/actualizar` y despues bumpea un `refreshKey` en el
+    `useEffect` de datos para refrescar el dashboard sin recargar la pagina.
 - Probado end-to-end con Chrome (MCP): login → `/dashboards` → `/dashboards/sobretiempo` con
   los 7 filtros en cascada, ordenamiento de tablas, scroll, y valores/% sobre los graficos →
   logout. Ojo: el screenshot de la herramienta a veces recorta el ancho real de la ventana
   (falso overflow) — si algo se ve "cortado" en una captura, confirmar con
   `getBoundingClientRect()`/`document.body.scrollWidth` via `javascript_tool` antes de asumir
   que es un bug real.
+
+## Acceso en red (LAN/VPN)
+
+Habilitado 13-ago-2026 para que otros usuarios se conecten desde la red interna
+o VPN (nunca expuesto a Internet — sin port-forwarding en el router).
+
+**Lo que ya está hecho (código):**
+
+- **Backend sirve el frontend**: `backend/main.py` monta `frontend/dist`
+  (build de producción, `vite build`) en el mismo puerto que la API — un
+  catch-all `@app.get("/{full_path:path}")` devuelve `index.html` para
+  cualquier ruta que no sea de la API ni un archivo estático, para que
+  React Router maneje las rutas del lado del cliente (deep links y refresh
+  funcionan). Este catch-all solo se activa si `frontend/dist/` existe — en
+  desarrollo sin build, sigue funcionando el dev server de Vite en 5173
+  aparte, sin conflicto.
+- `frontend/.env.production` tiene `VITE_API_BASE_URL=` (vacío a propósito)
+  para que en el build de producción las llamadas a la API sean same-origin
+  (`/auth/login` en vez de `http://localhost:8000/auth/login`). El `.env`
+  normal (dev) sigue apuntando a `http://localhost:8000`.
+- **Límite de intentos de login**: `backend/auth/crud.py`
+  (`MAX_INTENTOS_FALLIDOS = 5`, `BLOQUEO_MINUTOS = 15`). A los 5 intentos
+  fallidos seguidos, la cuenta queda bloqueada 15 minutos (incluso con la
+  contraseña correcta) — HTTP 429. Se resetea el contador en un login
+  exitoso. Requirió migración de Alembic (`27395fc7fa19`,
+  columnas `failed_login_attempts`/`locked_until` en `users`).
+- Backend probado escuchando en `0.0.0.0:8000` (no solo `127.0.0.1`) —
+  confirmado accesible por la IP de LAN de la notebook, no solo localhost.
+
+**Para levantar en modo "producción" (LAN/VPN) en vez de dev:**
+
+```powershell
+cd frontend; node ".\node_modules\vite\bin\vite.js" build   # genera frontend/dist
+cd ..
+venv\Scripts\python.exe -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Con esto, un solo puerto (8000) sirve todo. Hay que repetir el `vite build`
+cada vez que cambie el frontend (a diferencia del dev server, no hay hot
+reload del lado del cliente en este modo).
+
+**Pendiente — pasos manuales, no los ejecuta el agente (son cambios de
+sistema/red, fuera del proyecto):**
+
+1. **IP fija para la notebook**: hoy la IP de LAN (`192.168.1.132` al
+   13-ago-2026, adaptador Wi-Fi) puede cambiar si se renueva el lease DHCP.
+   Reservarla en el router (por MAC address) o configurar IP estática en
+   Windows, para que el acceso de otros no se rompa solo.
+2. **Regla de Firewall de Windows**, perfil **Privado** (no Público, para
+   que no quede expuesto si la notebook se conecta a otra red):
+   ```powershell
+   New-NetFirewallRule -DisplayName "PDA (puerto 8000)" -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow -Profile Private
+   ```
+3. **Nombre `pda` en vez de la IP**: se descartó mDNS (`pda.local`) porque
+   la mayoría de las VPN no reenvían tráfico multicast, así que no
+   resolvería para quien se conecte por VPN. La alternativa 100% local (no
+   sale de la red, no toca ningún DNS/hosting externo) es una línea en el
+   archivo hosts de **cada máquina** que quiera usar el nombre corto —
+   requiere permisos de administrador en esa máquina:
+   - Windows: `C:\Windows\System32\drivers\etc\hosts`
+   - Mac/Linux: `/etc/hosts`
+   - Línea a agregar: `192.168.1.132   pda` (ajustar la IP si se reserva otra).
+   - Con eso, `http://pda:8000` funciona igual que la IP. El puerto se
+     mantiene (no se probó mover a 80/sin puerto, por riesgo de que algo más
+     en Windows ya lo tenga reservado).
+   - Esto hay que repetirlo en la máquina de cada usuario que quiera usar el
+     nombre corto — no hay forma de resolverlo centralizado sin control
+     sobre el DNS de la red (fuera del alcance de una notebook individual).
 
 ## Cómo correr el proyecto
 
@@ -180,6 +299,17 @@ cd frontend; node ".\node_modules\vite\bin\vite.js"
   de desarrollo con `--reload` (ver "Cómo correr el proyecto"); si de todos modos un cambio
   de backend no se refleja al probarlo, sospechar primero del proceso viejo antes de
   buscar el bug en el código nuevo.
+- **Variante del gotcha de arriba: si un `--reload` intenta recargar y el import falla**
+  (ej. falta una dependencia nueva, como paso con `python-multipart` al agregar el upload
+  de Sobretiempo), WatchFiles NO vuelve a intentar solo — el proceso viejo se queda
+  respondiendo indefinidamente con las rutas de ANTES del cambio que rompio el import,
+  sin ningun error visible salvo un `RuntimeError`/traceback que queda enterrado en el log
+  de esa recarga puntual. Sintoma: un endpoint nuevo devuelve 404/405 aunque el codigo este
+  bien y `python -c "from backend.main import app"` en un proceso nuevo funcione perfecto.
+  Si eso pasa, revisar el log de la tarea de background buscando `WARNING: WatchFiles
+  detected changes... Reloading` seguido de un traceback, y reiniciar el proceso entero
+  (no alcanza con tocar un archivo para forzar otro reload si la causa ya esta resuelta,
+  a veces hace falta el restart limpio).
 - **pip install en batches grandes falla intermitentemente** en este entorno (procesos
   largos se cortan a mitad de descarga/instalación, exit code 43/1067). Solución: instalar
   en grupos chicos (4-5 paquetes top-level a la vez) en vez de todo `requirements.txt` junto.

@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Enum, String
+from sqlalchemy import Boolean, DateTime, Enum, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.database.db import Base
@@ -26,3 +26,9 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+
+    # Limite de intentos de login. Se guardan en UTC naive (no timezone=True)
+    # a proposito: SQLite + SQLAlchemy no preserva confiablemente el tzinfo al
+    # leer de vuelta, y comparar naive vs aware tira TypeError.
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default="0")
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
