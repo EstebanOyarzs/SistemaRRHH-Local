@@ -51,6 +51,31 @@ Hecho:
   del patrón de Sobretiempo en varios puntos: 2 archivos de dotación en vez
   de 1, y una tabla maestra editable con clasificación calculada en vivo).
 
+- **Antivirus/EDR corporativo mata `venv\Scripts\python.exe` al escuchar red**
+  (14-ago-2026): en esta notebook (Windows 11 Enterprise gestionada), el
+  proceso de uvicorn se corta solo a los segundos/minutos de arrancar, sin
+  traceback — pasa tanto en modo Producción (`0.0.0.0`) como Desarrollo
+  (`127.0.0.1`), así que no es por estar expuesto en red. `node.exe` nunca
+  se ve afectado. No se pudo confirmar 100% viendo el Historial de
+  protección de Windows Security, pero el patrón (mata específicamente
+  `python.exe` de un venv, nunca node) es consistente con un EDR que
+  desconfía de intérpretes Python sin firmar. Mientras no se consiga una
+  excepción de IT, el dashboard "se cae" impredeciblemente — la mitigación
+  implementada es generar el reporte sin necesitar el servidor corriendo,
+  ver "Reportes sin servidor" más abajo. `Iniciar.bat` (raíz del proyecto)
+  tiene un menú Producción/Desarrollo con esperas y validaciones — sigue
+  sufriendo el mismo problema del antivirus, no es un bug del script.
+
+- **Dashboard de Sobretiempo — varias iteraciones de UX post-lanzamiento**
+  (14-ago-2026, ver detalle completo en "Frontend" más abajo): filtros con
+  selección múltiple (menos Mes), sección "Alerta" que combina dos
+  indicadores (% Gastado y Ritmo de gasto, este último normalizado por
+  tiempo transcurrido para no alertar más en diciembre que en enero),
+  "Resumen" rediseñado como una sola barra de progreso, y "Concepto" ahora
+  sale de la columna "Clasif Haber" del Excel (antes usaba el texto
+  detallado "Texto expl.CC-nómina", que tenía ~20 variantes en vez de 5
+  categorías limpias).
+
 Pendiente (orden sugerido, ver spec original del usuario para el detalle de cada módulo):
 1. Más planillas/dashboards siguiendo el mismo patrón que Sobretiempo/Capacitación
    (ver abajo), agregando su card en `frontend/src/pages/DashboardsHomePage.tsx`
@@ -117,13 +142,20 @@ Para Sobretiempo (control de horas extra vs. presupuesto) quedó así:
   parsing/normalizacion, ver arriba — `respaldar_db()` + `procesar_archivo()`),
   `schemas.py` (Pydantic, un modelo por tabla con todas las columnas) y
   `router.py` (4 endpoints GET, uno por tabla, con filtros opcionales
-  `anio`/`mes`/`sociedad`/`gerencia`/`subgerencia`/`unidad`/`ceco`/`cuenta`,
-  protegidos con `get_current_user` — cualquier rol autenticado puede leer;
-  + `POST /actualizar`, protegido con `require_roles(ADMINISTRADOR)`, recibe
-  el Excel subido). `TABLE_COLUMNS` en `router.py` define qué filtros aplican
-  a cada tabla (`sobretiempo_resumen_gerencia` solo tiene Gerencia+
-  Subgerencia+Mes, así que ahí se ignoran silenciosamente los filtros que no
-  le aplican en vez de romper el SQL). Montado en `backend/main.py` bajo
+  `anio`/`mes`/`sociedad`/`gerencia`/`subgerencia`/`unidad`/`ceco`/`cuenta`/
+  `concepto` — todos menos `anio`/`mes` soportan selección múltiple (se
+  mandan como parámetro repetido, `?sociedad=A&sociedad=B`), protegidos con
+  `get_current_user` — cualquier rol autenticado puede leer; + `POST
+  /actualizar`, protegido con `require_roles(ADMINISTRADOR)`, recibe el
+  Excel subido). **Gotcha de FastAPI**: un campo `Optional[list[str]] =
+  None` en un `@dataclass` usado con `Depends()` NO se llena solo desde
+  query params repetidos — hace falta `Optional[list[str]] = Query(None)`
+  explícito, si no siempre da `None` en silencio (sin error) aunque el
+  campo `Optional[str] = None` normal sí funcione bien al lado. `Concepto`
+  solo es válido para `sobretiempo_detalle` (no existe en las tablas
+  pre-agregadas) — se ignora silenciosamente en las otras vía
+  `TABLE_COLUMNS`, mismo mecanismo que ya usa `sobretiempo_resumen_gerencia`
+  para ignorar filtros que no le aplican. Montado en `backend/main.py` bajo
   `/dashboards/sobretiempo/...`. Requiere `python-multipart` (ya en
   `requirements.txt`) para los uploads — si falta, FastAPI tira
   `RuntimeError` recien al registrar la ruta, no al arrancar.
@@ -131,7 +163,43 @@ Para Sobretiempo (control de horas extra vs. presupuesto) quedó así:
   embebidos) mapea 1 a 1 con las 4 tablas: `resumenGerencia` → panel
   "Resumen Ejecutivo", `resumen` → paneles "Control Mensual" y "Detalle por
   Responsable", `detalle` → panel "¿En qué se gastó?". Sirve de referencia
-  para qué campos va a necesitar el futuro frontend.
+  para qué campos va a necesitar el futuro frontend (el frontend real ya no
+  usa `resumenGerencia`, ver "Frontend" más abajo).
+
+## Reportes sin servidor (respaldo si el backend no se puede mantener arriba)
+
+Por el problema del antivirus/EDR (ver "Estado actual"), cada dashboard
+tiene un script de línea de comandos que genera el reporte final leyendo
+la base SQLite y (para Sobretiempo) `frontend/dist` directo del disco —
+**nunca abre un puerto de red**, así que no le pega el mismo problema.
+Mismo patrón que `normalizar_*.py`: la lógica vive en
+`backend/dashboards/<dashboard>/`, el script en la carpeta del dashboard es
+un wrapper delgado.
+
+- **Sobretiempo** (`Sobretiempo/generar_reporte_sobretiempo.py`): arma el
+  MISMO HTML autocontenido que el botón "Descargar reporte (HTML)" del
+  dashboard — lee los tags `<script>`/`<link>` de `frontend/dist/index.html`
+  para ubicar el bundle JS/CSS del build, los embebe junto con
+  `sobretiempo_resumen`/`sobretiempo_detalle` completas (`SELECT *`, sin
+  filtrar) como `window.__PDA_EXPORT__`. La lógica vive en
+  `backend/dashboards/sobretiempo/reporte_html.py`
+  (`generar_reporte_html()`). Requiere `frontend/dist` ya compilado
+  (`vite build`). Los booleanos de SQLite (0/1) se castean a `bool` de
+  Python antes de convertir a JSON — si no, pandas los serializa como
+  `0`/`1` en vez de `true`/`false`, y aunque el JS los trata igual por
+  truthy/falsy, no coincidiría con lo que devuelve la API real. Guarda en
+  `Sobretiempo/data/reportes/` (gitignored — el HTML lleva nombres/RUT
+  reales de empleados).
+- **Capacitación** (`Capacitacion/generar_reporte_capacitacion.py`): arma
+  el mismo Excel de 3 hojas que `GET /exportar-excel`. La lógica de armado
+  del workbook (antes vivía duplicada dentro de `router.py`) se movió a
+  `backend/dashboards/capacitacion/reporte_excel.py`
+  (`generar_reporte_excel()`, `obtener_datos_reporte()`,
+  `construir_workbook()`) — el endpoint HTTP y el script de consola llaman
+  a las mismas funciones, nunca se duplica la lógica. Guarda en
+  `Capacitacion/data/reportes/` (gitignored, mismo motivo).
+- Los comandos completos (con rutas absolutas, listos para copiar) están en
+  `Sobretiempo/Ejecutar.txt` y `Capacitacion/Ejecutar.txt`.
 
 ## Dashboard de Capacitación
 
@@ -211,9 +279,15 @@ varios puntos — documentados acá porque no son obvios releyendo el código:
 - `backend/dashboards/capacitacion/`: `db.py` (engine + nombres de tabla +
   `CREATE TABLE IF NOT EXISTS` de la tabla maestra al importar), `normalizar.py`
   (parsing + `sembrar_procedimientos_si_vacia()` + `procesar_archivos()`),
-  `schemas.py`, `router.py`. Montado en `backend/main.py` bajo
+  `reporte_excel.py` (armado del workbook de 3 hojas, compartido entre
+  `GET /exportar-excel` y el script de consola, ver "Reportes sin
+  servidor"), `schemas.py`, `router.py`. Montado en `backend/main.py` bajo
   `/dashboards/capacitacion/...`; `sembrar_procedimientos_si_vacia()` se
   llama una vez ahí mismo, después de montar el router.
+- **`Capacitacion/normalizar_capacitacion.py`** (línea de comandos, 14-ago-2026):
+  wrapper delgado sobre `procesar_archivos()`, mismo rol que
+  `Sobretiempo/normalizar_sobretiempo.py` — uso:
+  `venv\Scripts\python.exe Capacitacion\normalizar_capacitacion.py "actual.xlsx" "anterior.xlsx" <mes> <anio>`.
 - Frontend: `frontend/src/pages/CapacitacionDashboardPage.tsx` +
   `frontend/src/api/capacitacion.ts`. El helper genérico de tablas
   ordenables (`Columna<T>`, `ordenarFilas`) se movió a
@@ -239,36 +313,64 @@ Decisiones tomadas con el usuario (13-ago-2026):
 - **Estructura**: `src/api/` (cliente fetch + JWT en localStorage, un archivo por dominio:
   `auth.ts`, `sobretiempo.ts`), `src/auth/` (`AuthContext`, `RequireAuth`), `src/components/layout/`
   (`AppLayout` = sidebar + topbar), `src/components/SearchableSelect.tsx` (select con buscador,
-  reusado en los 7 filtros), `src/pages/` (una página por ruta), `src/charts/registerCharts.ts`
-  (registro central de Chart.js + paleta de charts). Charting con `chart.js` + `react-chartjs-2`
-  + `chartjs-plugin-datalabels` (valores/% sobre las barras y el donut, cargado por gráfico via
-  el prop `plugins` de cada componente — nunca registrado global, para no afectar otros charts).
+  un solo valor — hoy solo lo usa el filtro Mes) + `src/components/SearchableMultiSelect.tsx`
+  (mismo estilo pero multi-selección, checkbox por opción, el menú no se cierra al elegir —
+  usado por los otros 6 filtros de Sobretiempo, ver abajo), `src/pages/` (una página por ruta),
+  `src/charts/registerCharts.ts` (registro central de Chart.js + paleta de charts, incluye
+  `warning` ademas de `red`/`navy`/`success` para los badges de alerta/ritmo). Charting con
+  `chart.js` + `react-chartjs-2` + `chartjs-plugin-datalabels` (valores/% sobre las barras,
+  cargado por gráfico via el prop `plugins` de cada componente — nunca registrado global).
+  `apiGet` (`src/api/client.ts`) manda arrays como parámetro repetido (`?x=A&x=B`), formato
+  que espera FastAPI para listas en query params.
 - `frontend/.env` tiene `VITE_API_BASE_URL` (default `http://localhost:8000`). CORS del backend
   ya permite cualquier origen (`allow_origins=["*"]`), no hace falta proxy de Vite.
 - **`SobretiempoDashboardPage.tsx` — patrón de filtros y tablas, replicar para futuros dashboards**:
-  - 7 filtros (Mes, Sociedad, Gerencia, Subgerencia, Unidad, Centro Costo, Cuenta) con
-    `SearchableSelect`, **en cascada**: las opciones de cada uno se recalculan client-side
-    (`rowMatches`) a partir de un dataset base sin filtrar (`opciones`, fetched una sola vez),
-    aplicando todos los DEMÁS filtros activos salvo el propio — evita que un filtro se
-    autoborre sus propias opciones. Si una seleccion deja de ser valida al cambiar otro
-    filtro, se limpia sola (`useEffect` por filtro).
+  - 7 filtros (Sociedad, Gerencia, Subgerencia, Unidad, Centro Costo, Concepto, Mes — Mes va al
+    final, no al principio). **Todos multi-selección salvo Mes** (decisión del usuario,
+    14-ago-2026): `SearchableMultiSelect` para los primeros 6, `SearchableSelect` solo para Mes.
+    `Concepto` es un caso especial — sale del detalle transaccional (`Clasif Haber` del Excel,
+    ver "Patrón de dashboards"), no existe en la tabla `resumen`, así que solo filtra los
+    paneles transaccionales (¿En qué se gastó?, Ranking de Importe) y se calcula desde una
+    fuente propia sin filtrar (`detalleCompleto`, fetched aparte de `opciones`).
+    Filtros **en cascada**: las opciones de cada uno se recalculan client-side
+    (`coincideConFiltros`/`coincideValor`, que aceptan tanto un string como un array — `FiltroValor`)
+    a partir de un dataset base sin filtrar (`opciones`, fetched una sola vez),
+    aplicando todos los DEMÁS filtros activos salvo el propio. Si una seleccion deja de ser
+    valida al cambiar otro filtro, se saca del array (no se vacía todo) — `useEffect` por filtro.
   - Dos fetches paralelos por combinación de filtros: `resumen`/`detalle` (con TODOS los
     filtros incl. mes, para paneles de "foto de un mes") y `resumenAnual` (mismos filtros
     SIN mes, para paneles de tendencia anual tipo "Control Mensual" que necesitan los 12
     meses para sumar correctamente). Ver comentario en el `useEffect` principal.
-  - "Resumen Ejecutivo" ya NO usa la tabla `resumen_gerencia` (esa solo soporta filtro por
-    Gerencia/Subgerencia) — se recalcula client-side desde `resumenAnual`, replicando
-    exactamente la metodología original (`Con_Presupuesto_Asignado` filtrado antes de sumar,
-    ver `resumenAnualPresupuestado`) para que las cifras no cambien, pero ahora respeta los
-    7 filtros. Tiene un selector de 5 dimensiones (Sociedad/Gerencia/Subgerencia/Unidad/Cuenta,
-    círculos tipo radio, default Sociedad) que reagrupa el gráfico de saldo en el momento.
-  - Tablas ("Detalle" y "Ranking de Importe") son **ordenables por columna** (un solo click
-    invierte asc/desc) vía el helper genérico `ordenarFilas` + arrays de columnas tipados
-    (`COLUMNAS_DETALLE`, `COLUMNAS_TRANSACCIONES`, interfaz `Columna<T>`) — agregar una
-    columna nueva es agregar un objeto al array, no tocar el JSX de la tabla. Ambas muestran
-    la lista COMPLETA (sin top-N) en un contenedor con scroll vertical + header sticky
-    (`.sobretiempo__table-wrap--scroll` + `--rows15`/`--rows10` según cuántas filas se
-    quieren ver sin scrollear).
+  - **"Resumen"** (antes "Resumen Ejecutivo", renombrado 14-ago-2026): ya no tiene el selector
+    de dimensión con gráfico de barras — es una sola barra de progreso horizontal
+    ("Saldo disponible": Gastado/Disponible/Presupuesto anual/Cuentas sin presupuesto, todo
+    agregado sobre TODAS las cuentas en el alcance de los filtros de org, sin importar Mes).
+  - **"Alerta"** (14-ago-2026, el cambio más grande de esta sesión): una sola tabla combinada
+    con dos indicadores por cuenta (Sociedad+Ceco+Cuenta+Gerencia+Subgerencia+Unidad,
+    dedupeada al mes más reciente disponible — cuidado, si no hay filtro de Mes esa dedup
+    da Mes_Num=12 porque `resumen` trae el universo completo del año con meses futuros en $0,
+    así que el mes de referencia real para "ritmo" usa `ultimoMesCerrado`, NO el Mes_Num de
+    la fila):
+    - **% Gastado**: `Pct_Ejecucion_Acumulado` tal cual lo manda el backend (Real acumulado /
+      Presupuesto acumulado A LA FECHA) — umbral 50%/70%. Sube solo con el tiempo, sin
+      importar el ritmo real, porque el presupuesto se suele cargar completo temprano en el
+      año (en los datos 2026, para marzo/abril ya está el 100% cargado).
+    - **Ritmo de gasto**: `(Real_Acumulado / Presupuesto_Anual_FIJO) / (mes_referencia / 12)`
+      — 1.0 = exactamente a tiempo sin importar el mes, >1.0 = gastando más rápido de lo
+      esperado. Mismo número que "proyección a fin de año / presupuesto anual". Umbral
+      1.0x/1.3x. Se agregó específicamente porque "% Gastado" da falsos positivos crecientes
+      a medida que avanza el año (no es lo mismo alertar en enero que en diciembre).
+    - La tabla muestra la UNIÓN de ambos criterios (entra si cualquiera de los dos marca),
+      para poder comparar cuenta por cuenta. Color de fila = el peor de los dos (`nivelCombinado`).
+    - Sociedad se muestra como sigla (`siglaSociedad`, mapeo inverso del `SOCIEDAD_MAP` del
+      backend) para no ensanchar la tabla — igual en la tabla "Detalle".
+  - Tablas ("Detalle", "Alerta" y "Ranking de Importe") son **ordenables por columna** (un solo
+    click invierte asc/desc) vía el helper genérico `ordenarFilas` + arrays de columnas tipados
+    (`COLUMNAS_DETALLE`, `COLUMNAS_ALERTA`, `COLUMNAS_TRANSACCIONES`, interfaz `Columna<T>`) —
+    agregar una columna nueva es agregar un objeto al array, no tocar el JSX de la tabla. Ambas
+    muestran la lista COMPLETA (sin top-N) en un contenedor con scroll vertical + header sticky
+    (`.sobretiempo__table-wrap--scroll` + `--rows20`/`--rows15`/`--rows10` según cuántas filas
+    se quieren ver sin scrollear — Detalle 20, Ranking de Importe 15, Alerta 10).
   - **Botón "Descargar reporte (HTML)"** (`src/utils/exportarHtml.ts`): arma un HTML
     autocontenido reutilizando el MISMO bundle JS/CSS que la app en vivo (lo lee del propio
     `<script>`/`<link>` de la pagina, `document.querySelector('script[type="module"][src*="/assets/"]')`)
@@ -284,12 +386,17 @@ Decisiones tomadas con el usuario (13-ago-2026):
     porque también corre standalone en el HTML exportado sin `AuthProvider`): sube el Excel
     a `POST /dashboards/sobretiempo/actualizar` y despues bumpea un `refreshKey` en el
     `useEffect` de datos para refrescar el dashboard sin recargar la pagina.
-- Probado end-to-end con Chrome (MCP): login → `/dashboards` → `/dashboards/sobretiempo` con
-  los 7 filtros en cascada, ordenamiento de tablas, scroll, y valores/% sobre los graficos →
-  logout. Ojo: el screenshot de la herramienta a veces recorta el ancho real de la ventana
-  (falso overflow) — si algo se ve "cortado" en una captura, confirmar con
-  `getBoundingClientRect()`/`document.body.scrollWidth` via `javascript_tool` antes de asumir
-  que es un bug real.
+- Probado end-to-end con Chrome (MCP) el 13-ago-2026, cuando los 7 filtros eran todos de
+  selección única — login → `/dashboards` → `/dashboards/sobretiempo` con filtros en cascada,
+  ordenamiento de tablas, scroll, y valores/% sobre los graficos → logout. Ojo: el screenshot
+  de la herramienta a veces recorta el ancho real de la ventana (falso overflow) — si algo se
+  ve "cortado" en una captura, confirmar con `getBoundingClientRect()`/`document.body.scrollWidth`
+  via `javascript_tool` antes de asumir que es un bug real. **Los cambios del 14-ago-2026
+  (multi-select, Alerta combinada, barra de Saldo disponible) se verificaron por otra vía**
+  (`TestClient` de FastAPI en memoria + comparación manual contra SQL directo, ver "Estado
+  actual") y NO se llegaron a probar clickeando en un Chrome real — el antivirus/EDR de esta
+  sesión no dejó mantener un backend arriba el tiempo suficiente. Si se retoma el testing con
+  Chrome, confirmar visualmente que el multi-select y la tabla de Alerta combinada se ven bien.
 
 ## Acceso en red (LAN/VPN)
 
@@ -324,7 +431,7 @@ o VPN (nunca expuesto a Internet — sin port-forwarding en el router).
 ```powershell
 cd frontend; node ".\node_modules\vite\bin\vite.js" build   # genera frontend/dist
 cd ..
-venv\Scripts\python.exe -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+venv\Scripts\python.exe -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir backend
 ```
 
 Con esto, un solo puerto (8000) sirve todo. Hay que repetir el `vite build`
@@ -361,14 +468,26 @@ sistema/red, fuera del proyecto):**
 
 ## Cómo correr el proyecto
 
-Siempre desde la raíz del proyecto (imports absolutos `backend.xxx`):
+**Forma normal: `Iniciar.bat`** (raíz del proyecto, doble click o
+`.\Iniciar.bat` desde una terminal) — menú con Producción (compila el
+frontend, levanta backend en `0.0.0.0:8000`, un solo puerto para toda la
+red) o Desarrollo (backend en `127.0.0.1:8000` + frontend en `5173`,
+ventanas separadas, con espera activa hasta confirmar que el backend
+responde antes de mostrar los links). Es un `.bat` puro, no PowerShell —
+así evita que una política de Execution Policy por GPO (común en Windows
+Enterprise gestionado) bloquee un `.ps1`. Si de todos modos se cae solo a
+los pocos segundos/minutos, ver el gotcha del antivirus/EDR más abajo — no
+es un bug del script, es el entorno matando el proceso.
+
+Para tocar el código directo (sin el menú), siempre desde la raíz del
+proyecto (imports absolutos `backend.xxx`):
 
 ```powershell
 # Instalar/actualizar dependencias
 venv\Scripts\python.exe -m pip install -r backend\requirements.txt
 
 # Levantar el backend
-venv\Scripts\python.exe -m uvicorn backend.main:app --reload
+venv\Scripts\python.exe -m uvicorn backend.main:app --reload --reload-dir backend
 
 # Migraciones
 venv\Scripts\python.exe -m alembic revision --autogenerate -m "mensaje"
@@ -383,6 +502,40 @@ cd frontend; node ".\node_modules\vite\bin\vite.js"
 
 ## Gotchas del entorno (para no perder tiempo re-descubriéndolos)
 
+- **Antivirus/EDR mata `venv\Scripts\python.exe` a los segundos/minutos de
+  escuchar en red, sin traceback** — visto reiteradas veces el 14-ago-2026,
+  con `--host 0.0.0.0` Y con `127.0.0.1` (no es por estar expuesto en red),
+  y probado con background jobs, `Start-Process` desatachado, y hasta una
+  Tarea Programada de Windows completamente independiente de la sesión —
+  siempre el mismo patrón, `node.exe` nunca se ve afectado. Sintoma: la
+  consola del backend vuelve a un prompt limpio sin ningún error, como si
+  alguien hubiera hecho Ctrl+C. No se pudo confirmar 100% desde Windows
+  Security (el usuario no ve alertas), pero el patrón es consistente con un
+  EDR corporativo. Mitigación implementada: los scripts de
+  "Reportes sin servidor" (ver esa sección) generan el reporte final sin
+  abrir ningún puerto, así que no les pega este problema. Si hay que
+  levantar el dashboard en vivo igual, `Iniciar.bat` ya tiene reintentos
+  razonables pero no puede evitar que el proceso muera solo — es un
+  problema de infraestructura/permisos de IT, no de código.
+- **FastAPI + `@dataclass` con `Depends()`: un campo `Optional[list[str]] =
+  None` NO se llena con query params repetidos**, siempre da `None` en
+  silencio (sin error) aunque `?x=A&x=B` esté bien mandado — hace falta
+  `Optional[list[str]] = Query(None)` explícito (import `Query` de
+  `fastapi`). Un campo `Optional[str] = None` normal (sin lista) sí anda
+  bien al lado sin el `Query()`. Se encontró armando el multi-select de
+  filtros de Sobretiempo (`backend/dashboards/sobretiempo/router.py`,
+  `SobretiempoFilters`) — verificado con un caso minimo aislado antes de
+  aplicar el fix real.
+- **`--reload` sin `--reload-dir backend` vigila TODO el proyecto, no solo el
+  backend** (`Will watch for changes in these directories: ['D:\\People Data
+  & Automation']`) — incluye `frontend/src`, `frontend/dist`, los `.db` de
+  cada dashboard, `data/uploads/`, etc. Cualquier cambio ahí (editar un
+  archivo del frontend, un `vite build`, o incluso una escritura normal a
+  SQLite) dispara un reinicio completo del backend y corta la conexión de
+  quien esté usando el dashboard en ese momento — sintoma: "cada vez que se
+  edita algo, localhost se cae". Siempre levantar uvicorn con
+  `--reload --reload-dir backend` (ya asi en `Iniciar.bat` y en los comandos
+  de esta seccion) para que solo vigile el código que de verdad importa.
 - **Si el backend corre SIN `--reload`, los cambios de código no se aplican** hasta
   reiniciar el proceso a mano — y el bug que produce es engañoso: los endpoints siguen
   respondiendo 200 con datos, así que parece un bug de lógica (ej. "el filtro no filtra")
@@ -436,8 +589,13 @@ cd frontend; node ".\node_modules\vite\bin\vite.js"
 backend/        FastAPI: api, auth, database, dashboards, email, ai, reports, services
 frontend/       React + TS + Vite, inicializado (ver seccion "Frontend")
 data/           sistema.db, reportes/, uploads/
+Sobretiempo/    dashboard 1: normalizar_sobretiempo.py, generar_reporte_sobretiempo.py,
+                Ejecutar.txt, data/ (db + backups/ + reportes/, todo gitignored)
+Capacitacion/   dashboard 2: normalizar_capacitacion.py, generar_reporte_capacitacion.py,
+                Ejecutar.txt, data/ (db + backups/ + reportes/, todo gitignored)
 models/         referencias/config de modelos IA locales
 onedrive_sync/  carpeta OneDrive sincronizada (se lee localmente, nunca via API)
 docs/           documentacion
 venv/           entorno virtual Python 3.12 (no versionado)
+Iniciar.bat     menu Produccion/Desarrollo, ver "Como correr el proyecto"
 ```

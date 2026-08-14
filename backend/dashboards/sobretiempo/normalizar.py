@@ -108,7 +108,16 @@ def cargar_detalle(path):
         "OI": raw["OI"],
         "PEP": raw["PEP"],
         "Codigo_Concepto": raw["CC-n."],
-        "Concepto": raw["Texto expl.CC-nómina"],
+        # "Concepto" es lo que se usa para agrupar/filtrar en el dashboard
+        # (grafico "Gasto por concepto", filtro superior de Concepto) — se
+        # tomo de "Clasif Haber" (columna W) a pedido del usuario, porque da
+        # categorias limpias (Hora Extra, Turnos, Citacion, etc.) en vez de
+        # las ~20 variantes granulares de "Texto expl.CC-nomina" (ej. "Horas
+        # Extras 50%", "Rot. Turno Normal 50%"). Ese texto detallado no se
+        # descarta, queda en Concepto_Detalle por si hace falta mas adelante
+        # (no se usa en el dashboard todavia).
+        "Concepto": raw["Clasif Haber"],
+        "Concepto_Detalle": raw["Texto expl.CC-nómina"],
         "Clasif_Haber": raw["Clasif Haber"],
         "Clasificacion": raw["Clasificación"],
         "Cantidad_Horas": pd.to_numeric(raw["Cantid."], errors="coerce"),

@@ -13,7 +13,7 @@ import { CapacitacionDashboardPage } from "./pages/CapacitacionDashboardPage";
 // como prop.
 function SobretiempoDashboardRoute() {
   const { user } = useAuth();
-  return <SobretiempoDashboardPage userRole={user?.role} />;
+  return <SobretiempoDashboardPage userRole={user?.role} userName={user?.full_name} />;
 }
 
 function CapacitacionDashboardRoute() {

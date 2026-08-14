@@ -1,0 +1,19 @@
+========================================
+COMANDOS - SOBRETIEMPO
+========================================
+Correr siempre con el Python del venv del proyecto (no el del sistema).
+
+--------------------------------------------------
+1) Normalizar/cargar un Excel nuevo a la base
+--------------------------------------------------
+"D:\People Data & Automation\venv\Scripts\python.exe" "D:\People Data & Automation\Sobretiempo\normalizar_sobretiempo.py" "ruta\al\archivo.xlsx"
+
+Ejemplo:
+"D:\People Data & Automation\venv\Scripts\python.exe" "D:\People Data & Automation\Sobretiempo\normalizar_sobretiempo.py" "C:\Users\eoyarzun\Desktop\Control de Sobretiempo 2026.xlsx"
+
+--------------------------------------------------
+2) Generar el reporte HTML (sin necesitar el servidor prendido)
+--------------------------------------------------
+"D:\People Data & Automation\venv\Scripts\python.exe" "D:\People Data & Automation\Sobretiempo\generar_reporte_sobretiempo.py"
+
+El archivo queda en: D:\People Data & Automation\Sobretiempo\data\reportes\

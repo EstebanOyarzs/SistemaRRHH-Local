@@ -48,14 +48,22 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function apiGet<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
-  const query = params
-    ? "?" +
-      Object.entries(params)
-        .filter(([, v]) => v !== undefined && v !== "")
-        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
-        .join("&")
-    : "";
+type ApiGetParams = Record<string, string | number | (string | number)[] | undefined>;
+
+// Los valores tipo array se mandan como parametro repetido (?ceco=A&ceco=B),
+// que es como FastAPI espera una lista en un query param.
+export function apiGet<T>(path: string, params?: ApiGetParams): Promise<T> {
+  const partes: string[] = [];
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === "") continue;
+      const valores = Array.isArray(v) ? v : [v];
+      for (const valor of valores) {
+        partes.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(valor))}`);
+      }
+    }
+  }
+  const query = partes.length ? "?" + partes.join("&") : "";
   return request<T>(`${path}${query}`);
 }
 

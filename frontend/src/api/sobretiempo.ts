@@ -3,12 +3,13 @@ import { apiGet, apiUpload } from "./client";
 export interface SobretiempoFilters {
   anio?: number;
   mes?: number;
-  sociedad?: string;
-  gerencia?: string;
-  subgerencia?: string;
-  unidad?: string;
-  ceco?: string;
-  cuenta?: number;
+  sociedad?: string[];
+  gerencia?: string[];
+  subgerencia?: string[];
+  unidad?: string[];
+  ceco?: string[];
+  cuenta?: number[];
+  concepto?: string[];
 }
 
 export interface ResumenGerencia {

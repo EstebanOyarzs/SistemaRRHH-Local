@@ -34,7 +34,7 @@ Ejecutar siempre desde la raiz del proyecto (los imports del backend son absolut
 venv\Scripts\python.exe -m pip install -r backend\requirements.txt
 
 # Backend - levantar servidor de desarrollo
-venv\Scripts\python.exe -m uvicorn backend.main:app --reload
+venv\Scripts\python.exe -m uvicorn backend.main:app --reload --reload-dir backend
 
 # Frontend (proximamente)
 cd frontend

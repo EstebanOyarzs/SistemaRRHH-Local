@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
@@ -42,10 +42,12 @@ NO_DATA_ERROR = HTTPException(
 # Columnas validas por tabla: resumen_gerencia solo esta agregada a nivel
 # Gerencia+Subgerencia+Mes, no tiene Sociedad/Unidad/Ceco/Cuenta. Filtrar por
 # esas columnas ahi directamente rompería el SQL, asi que se ignoran para esa
-# tabla en vez de fallar.
+# tabla en vez de fallar. Concepto solo existe en el detalle transaccional
+# (sobretiempo_detalle) — resumen/presupuesto estan pre-agregados por
+# Ceco+Cuenta+Mes y no tienen esa columna.
 _ORG_COLUMNS = {"Anio", "Mes_Num", "Sociedad", "Gerencia", "Subgerencia", "Unidad_Organizativa", "Ceco", "Cuenta_Contable"}
 TABLE_COLUMNS: dict[str, set[str]] = {
-    TABLE_DETALLE: _ORG_COLUMNS,
+    TABLE_DETALLE: _ORG_COLUMNS | {"Concepto"},
     TABLE_PRESUPUESTO: _ORG_COLUMNS,
     TABLE_RESUMEN: _ORG_COLUMNS,
     TABLE_RESUMEN_GERENCIA: {"Anio", "Mes_Num", "Gerencia", "Subgerencia"},
@@ -55,13 +57,18 @@ TABLE_COLUMNS: dict[str, set[str]] = {
 @dataclass
 class SobretiempoFilters:
     anio: Optional[int] = None
+    # Mes es el unico filtro de seleccion unica (el resto soporta multiple,
+    # se manda como parametro repetido, ej. ?sociedad=A&sociedad=B). Los
+    # campos list necesitan Query(None) explicito — un dataclass con
+    # Optional[list[str]] = None a secas no se llena con FastAPI/Depends().
     mes: Optional[int] = None
-    sociedad: Optional[str] = None
-    gerencia: Optional[str] = None
-    subgerencia: Optional[str] = None
-    unidad: Optional[str] = None
-    ceco: Optional[str] = None
-    cuenta: Optional[int] = None
+    sociedad: Optional[list[str]] = Query(None)
+    gerencia: Optional[list[str]] = Query(None)
+    subgerencia: Optional[list[str]] = Query(None)
+    unidad: Optional[list[str]] = Query(None)
+    ceco: Optional[list[str]] = Query(None)
+    cuenta: Optional[list[int]] = Query(None)
+    concepto: Optional[list[str]] = Query(None)
 
     def as_columns(self) -> dict[str, object]:
         cols = {
@@ -73,18 +80,30 @@ class SobretiempoFilters:
             "unidad": "Unidad_Organizativa",
             "ceco": "Ceco",
             "cuenta": "Cuenta_Contable",
+            "concepto": "Concepto",
         }
-        return {cols[k]: v for k, v in vars(self).items() if v is not None}
+        return {cols[k]: v for k, v in vars(self).items() if v not in (None, [])}
 
 
 def _query(table: str, filters: SobretiempoFilters) -> list[dict]:
-    params = {col: v for col, v in filters.as_columns().items() if col in TABLE_COLUMNS[table]}
+    columnas = filters.as_columns()
+    params = {col: v for col, v in columnas.items() if col in TABLE_COLUMNS[table]}
     sql = f"SELECT * FROM {table}"
-    if params:
-        sql += " WHERE " + " AND ".join(f"{col} = :{col}" for col in params)
+    clausulas = []
+    bind_params: dict[str, object] = {}
+    for col, v in params.items():
+        if isinstance(v, list):
+            nombres = [f"{col}_{i}" for i in range(len(v))]
+            clausulas.append(f"{col} IN ({', '.join(':' + n for n in nombres)})")
+            bind_params.update(zip(nombres, v))
+        else:
+            clausulas.append(f"{col} = :{col}")
+            bind_params[col] = v
+    if clausulas:
+        sql += " WHERE " + " AND ".join(clausulas)
     try:
         with engine.connect() as conn:
-            rows = conn.execute(text(sql), params).mappings().all()
+            rows = conn.execute(text(sql), bind_params).mappings().all()
     except OperationalError:
         raise NO_DATA_ERROR
     return [dict(row) for row in rows]

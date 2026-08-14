@@ -19,4 +19,5 @@ export const CHART_COLORS = {
   navyLight: "#6a6c6e",
   gray: "#dee2e6",
   success: "#0aa06e",
+  warning: "#e0a800",
 };

@@ -1,0 +1,22 @@
+========================================
+COMANDOS - CAPACITACION
+========================================
+Correr siempre con el Python del venv del proyecto (no el del sistema).
+
+--------------------------------------------------
+1) Normalizar/cargar dotaciones nuevas a la base
+--------------------------------------------------
+Necesita 2 archivos (dotacion del mes del reporte + dotacion del mes
+anterior, para detectar cambios de cargo) y el mes/anio del reporte.
+
+"D:\People Data & Automation\venv\Scripts\python.exe" "D:\People Data & Automation\Capacitacion\normalizar_capacitacion.py" "ruta\actual.xlsx" "ruta\anterior.xlsx" <mes 1-12> <anio>
+
+Ejemplo (reporte de Julio 2026):
+"D:\People Data & Automation\venv\Scripts\python.exe" "D:\People Data & Automation\Capacitacion\normalizar_capacitacion.py" "C:\Users\eoyarzun\Desktop\Detalle Julio.xlsx" "C:\Users\eoyarzun\Desktop\Detalle Junio.xlsx" 7 2026
+
+--------------------------------------------------
+2) Generar el reporte Excel (sin necesitar el servidor prendido)
+--------------------------------------------------
+"D:\People Data & Automation\venv\Scripts\python.exe" "D:\People Data & Automation\Capacitacion\generar_reporte_capacitacion.py"
+
+El archivo queda en: D:\People Data & Automation\Capacitacion\data\reportes\

@@ -4,6 +4,7 @@ export interface ExportPayload {
   resumenCompleto: Resumen[];
   detalleCompleto: Detalle[];
   generadoEl: string;
+  generadoPor?: string;
 }
 
 // Cuando el HTML exportado se abre standalone, main.tsx revisa esta variable
@@ -35,7 +36,7 @@ function escaparCierreDeScript(texto: string): string {
  * Solo funciona sirviendo el build de produccion (frontend/dist) — en el dev
  * server de Vite no hay un unico archivo JS/CSS para inlinear.
  */
-export async function exportarDashboardHtml(resumenCompleto: Resumen[]): Promise<void> {
+export async function exportarDashboardHtml(resumenCompleto: Resumen[], generadoPor?: string): Promise<void> {
   const scriptEl = document.querySelector<HTMLScriptElement>('script[type="module"][src*="/assets/"]');
   const linkEl = document.querySelector<HTMLLinkElement>('link[rel="stylesheet"][href*="/assets/"]');
   if (!scriptEl?.src || !linkEl?.href) {
@@ -55,6 +56,7 @@ export async function exportarDashboardHtml(resumenCompleto: Resumen[]): Promise
     resumenCompleto,
     detalleCompleto,
     generadoEl: new Date().toLocaleString("es-CL"),
+    generadoPor,
   };
 
   const datosEmbebidos = escaparCierreDeScript(JSON.stringify(payload));

@@ -91,3 +91,28 @@
   font-size: 0.8rem;
   color: var(--color-gray-text);
 }
+
+.searchable-select__option--multi {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.searchable-select__checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 1.5px solid var(--color-gray-border);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  color: var(--color-white);
+}
+
+.searchable-select__option--multi.searchable-select__option--active .searchable-select__checkbox {
+  border-color: var(--color-white);
+  background: var(--color-white);
+  color: var(--color-red);
+}

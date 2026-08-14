@@ -2,7 +2,6 @@ import shutil
 from datetime import datetime
 from io import BytesIO
 
-import openpyxl
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
@@ -18,7 +17,8 @@ from backend.dashboards.capacitacion.db import (
     TABLE_PROCEDIMIENTOS,
     engine,
 )
-from backend.dashboards.capacitacion.normalizar import CLASIFICACION_DEFAULT, MESES_NOMBRE, procesar_archivos
+from backend.dashboards.capacitacion.normalizar import CLASIFICACION_DEFAULT, procesar_archivos
+from backend.dashboards.capacitacion.reporte_excel import construir_workbook, nombre_archivo_reporte, obtener_datos_reporte
 from backend.dashboards.capacitacion.schemas import (
     ActualizacionOut,
     CambioCargoOut,
@@ -167,94 +167,23 @@ async def actualizar_datos(
 
 # ------------------------------------------------------------------------
 # Exportar Excel — misma estructura de 3 hojas que
-# "Capacitacion/Archivos Ejemplo/Reporte para capacitaciones - *.xlsx"
+# "Capacitacion/Archivos Ejemplo/Reporte para capacitaciones - *.xlsx".
+# La logica de armado del workbook vive en reporte_excel.py, compartida con
+# Capacitacion/generar_reporte_capacitacion.py (linea de comandos, sin
+# backend) — nunca se duplica.
 # ------------------------------------------------------------------------
-COLUMNAS_DOTACION = [
-    ("Cod_Personal", "N° pers."), ("Nombre_Completo", "Nombre completo"),
-    ("Area_Personal", "Área de personal"), ("Sociedad", "Sociedad"),
-    ("Unidad_Organizativa", "Unidad organizativa"), ("Funcion", "Función"),
-    ("Gerencia", "Gerencia"), ("Subgerencia", "Subgerencia"),
-    ("Fecha_Ingreso", "Fecha Ingreso"), ("Nombre_Superior", "Nombre del superior (GO)"),
-    ("Nacionalidad", "Nacionalidad"), ("Mail", "Mail"),
-    ("Clasificacion", "Clasificación de Procedimientos"),
-]
-COLUMNAS_CAMBIOS_CARGO = [
-    ("Cod_Personal", "N° pers."), ("Nombre_Completo", "Nombre completo"),
-    ("Area_Personal", "Área de personal"), ("Sociedad", "Sociedad"),
-    ("Unidad_Organizativa", "Unidad organizativa"), ("Cargo_Anterior", "Cargo Anterior"),
-    ("Funcion", "Función"), ("Gerencia", "Gerencia"), ("Subgerencia", "Subgerencia"),
-    ("Fecha_Ingreso", "Fecha Ingreso"), ("Nombre_Superior", "Nombre del superior (GO)"),
-    ("Nacionalidad", "Nacionalidad"), ("Mail", "Mail"),
-    ("Clasificacion", "Clasificación de Procedimientos"),
-]
-COLUMNAS_PROCEDIMIENTOS = [("Funcion", "Función"), ("Codigos", "Procedimientos asignados")]
-
-
-def _valor_celda(campo: str, valor):
-    if campo == "Fecha_Ingreso" and isinstance(valor, str) and valor:
-        try:
-            return datetime.strptime(valor[:10], "%Y-%m-%d").date()
-        except ValueError:
-            return valor
-    return valor
-
-
-def _escribir_tabla(ws, start_row: int, columnas, filas: list[dict]) -> int:
-    for j, (_, header) in enumerate(columnas, start=1):
-        ws.cell(row=start_row, column=j, value=header)
-    r = start_row + 1
-    for fila in filas:
-        for j, (campo, _) in enumerate(columnas, start=1):
-            ws.cell(row=r, column=j, value=_valor_celda(campo, fila.get(campo)))
-        r += 1
-    return r
-
-
-def _construir_workbook(dotacion, nuevos, cambios, procedimientos):
-    wb = openpyxl.Workbook()
-
-    ws_resumen = wb.active
-    ws_resumen.title = "Resumen"
-    fila = 2
-    ws_resumen.cell(row=fila, column=1, value="Nuevos ingresos ")
-    fila = _escribir_tabla(ws_resumen, fila + 1, COLUMNAS_DOTACION, nuevos)
-    fila += 2
-    ws_resumen.cell(row=fila, column=1, value="Cambios de cargo")
-    _escribir_tabla(ws_resumen, fila + 1, COLUMNAS_CAMBIOS_CARGO, cambios)
-
-    ws_dotacion = wb.create_sheet("Dotación CHTA")
-    _escribir_tabla(ws_dotacion, 1, COLUMNAS_DOTACION, dotacion)
-
-    ws_proc = wb.create_sheet("Procedimientos")
-    _escribir_tabla(ws_proc, 1, COLUMNAS_PROCEDIMIENTOS, procedimientos)
-
-    return wb
-
-
 @router.get("/exportar-excel")
 def exportar_excel(_user: User = Depends(get_current_user)):
-    dotacion = _query_con_clasificacion(TABLE_DOTACION)
-    if not dotacion:
+    datos = obtener_datos_reporte()
+    if not datos["dotacion"]:
         raise NO_DATA_ERROR
-    nuevos = _query_con_clasificacion(TABLE_NUEVOS_INGRESOS)
-    cambios = _query_con_clasificacion(TABLE_CAMBIOS_CARGO)
-    with engine.connect() as conn:
-        procedimientos = [
-            dict(row) for row in conn.execute(
-                text(f"SELECT * FROM {TABLE_PROCEDIMIENTOS} ORDER BY Funcion")
-            ).mappings().all()
-        ]
 
-    mes_reporte = dotacion[0].get("Mes_Reporte")
-    anio_reporte = dotacion[0].get("Anio_Reporte")
-    mes_nombre = MESES_NOMBRE.get(mes_reporte, "")
-
-    wb = _construir_workbook(dotacion, nuevos, cambios, procedimientos)
+    wb = construir_workbook(datos["dotacion"], datos["nuevos"], datos["cambios"], datos["procedimientos"])
     buffer = BytesIO()
     wb.save(buffer)
     buffer.seek(0)
 
-    nombre_archivo = f"Reporte para capacitaciones - {mes_nombre} {anio_reporte}.xlsx"
+    nombre_archivo = nombre_archivo_reporte(datos["mes_reporte"], datos["anio_reporte"])
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
