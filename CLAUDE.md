@@ -342,9 +342,13 @@ Decisiones tomadas con el usuario (13-ago-2026):
     SIN mes, para paneles de tendencia anual tipo "Control Mensual" que necesitan los 12
     meses para sumar correctamente). Ver comentario en el `useEffect` principal.
   - **"Resumen"** (antes "Resumen Ejecutivo", renombrado 14-ago-2026): ya no tiene el selector
-    de dimensión con gráfico de barras — es una sola barra de progreso horizontal
-    ("Saldo disponible": Gastado/Disponible/Presupuesto anual/Cuentas sin presupuesto, todo
-    agregado sobre TODAS las cuentas en el alcance de los filtros de org, sin importar Mes).
+    de dimensión con gráfico de barras — es una sola barra de progreso horizontal de dos
+    segmentos, rojo "Gastado" (crece) + verde "Disponible" (achica), cada uno con su texto
+    centrado (se oculta si el segmento queda muy angosto, `< 8%`) — el color verde para
+    "disponible" es a propósito, para que coincida con el título de la sección (la primera
+    versión pintaba todo en rojo y confundía). Debajo, 4 datos: Gastado/Disponible/
+    Presupuesto anual/Cuentas sin presupuesto, todo agregado sobre TODAS las cuentas en el
+    alcance de los filtros de org, sin importar Mes.
   - **"Alerta"** (14-ago-2026, el cambio más grande de esta sesión): una sola tabla combinada
     con dos indicadores por cuenta (Sociedad+Ceco+Cuenta+Gerencia+Subgerencia+Unidad,
     dedupeada al mes más reciente disponible — cuidado, si no hay filtro de Mes esa dedup

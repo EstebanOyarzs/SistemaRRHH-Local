@@ -82,6 +82,7 @@
 }
 
 .sobretiempo__saldo-barra {
+  display: flex;
   width: 100%;
   height: 36px;
   background: var(--color-gray-bg-alt);
@@ -90,15 +91,34 @@
   border: 1px solid var(--color-gray-border);
 }
 
-.sobretiempo__saldo-barra-fill {
+.sobretiempo__saldo-barra-gastado,
+.sobretiempo__saldo-barra-disponible {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   height: 100%;
-  background: var(--color-red);
-  border-radius: var(--radius-pill);
+  overflow: hidden;
+  white-space: nowrap;
   transition: width 0.3s ease;
 }
 
-.sobretiempo__saldo-barra-fill--critico {
+.sobretiempo__saldo-barra-gastado span,
+.sobretiempo__saldo-barra-disponible span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-white);
+}
+
+.sobretiempo__saldo-barra-gastado {
+  background: var(--color-red);
+}
+
+.sobretiempo__saldo-barra-gastado--critico {
   background: var(--color-red-darker);
+}
+
+.sobretiempo__saldo-barra-disponible {
+  background: var(--color-success);
 }
 
 .sobretiempo__saldo-datos {

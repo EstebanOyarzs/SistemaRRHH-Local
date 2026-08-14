@@ -763,9 +763,16 @@ export function SobretiempoDashboardPage({ userRole, userName }: SobretiempoDash
           <p className="sobretiempo__saldo-subtitulo">Según los filtros generales de arriba (Sociedad, Gerencia, Subgerencia, Unidad, Centro Costo).</p>
           <div className="sobretiempo__saldo-barra">
             <div
-              className={`sobretiempo__saldo-barra-fill${saldoDisponibleTotal < 0 ? " sobretiempo__saldo-barra-fill--critico" : ""}`}
+              className={`sobretiempo__saldo-barra-gastado${saldoDisponibleTotal < 0 ? " sobretiempo__saldo-barra-gastado--critico" : ""}`}
               style={{ width: `${Math.min(pctGastado, 1) * 100}%` }}
-            />
+            >
+              {pctGastado >= 0.08 && <span>Gastado</span>}
+            </div>
+            {saldoDisponibleTotal >= 0 && (
+              <div className="sobretiempo__saldo-barra-disponible" style={{ width: `${(1 - pctGastado) * 100}%` }}>
+                {1 - pctGastado >= 0.08 && <span>Disponible</span>}
+              </div>
+            )}
           </div>
           <div className="sobretiempo__saldo-datos">
             <div className="sobretiempo__saldo-dato">
