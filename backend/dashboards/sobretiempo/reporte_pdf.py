@@ -178,13 +178,13 @@ def _ranking_por_concepto(df_fuente: pd.DataFrame) -> pd.DataFrame:
     dashboard HTML, para no repetir a la misma persona en filas separadas
     por transaccion/mes/concepto (ver CLAUDE.md, bug de "Ranking de
     Importe" del 17-ago-2026). Top TOP_N_PERSONAS por Total."""
-    columnas_vacias = ["Cod_SAP", "Nombre_Personal", "Total"] + CONCEPTOS_RANKING
+    columnas_vacias = ["Cod_SAP", "Nombre_Personal", "Total", "Horas"] + CONCEPTOS_RANKING
     if df_fuente.empty:
         return pd.DataFrame(columns=columnas_vacias)
 
     totales = (
-        df_fuente.groupby(["Cod_SAP", "Nombre_Personal"], as_index=False)["Importe"].sum()
-        .rename(columns={"Importe": "Total"})
+        df_fuente.groupby(["Cod_SAP", "Nombre_Personal"], as_index=False)
+        .agg(Total=("Importe", "sum"), Horas=("Cantidad_Horas", "sum"))
     )
     por_concepto = (
         df_fuente.groupby(["Cod_SAP", "Nombre_Personal", "Concepto"], as_index=False)["Importe"].sum()
@@ -321,7 +321,7 @@ def _datos_gerencia(gerencia: str) -> dict | None:
     )
 
     det = pd.read_sql_query(
-        f"SELECT Cod_SAP, Nombre_Personal, Cargo, Subgerencia, Concepto, Importe, Ceco "
+        f"SELECT Cod_SAP, Nombre_Personal, Cargo, Subgerencia, Concepto, Importe, Cantidad_Horas, Ceco "
         f"FROM {TABLE_DETALLE} WHERE Gerencia = :g",
         engine, params={"g": gerencia},
     )
@@ -566,13 +566,14 @@ def _tabla_ranking(personas: pd.DataFrame) -> Table:
     # Gerencia donde nadie de las Top 10 lo tiene).
     conceptos_visibles = [c for c in CONCEPTOS_RANKING if (personas[c] != 0).any()]
 
-    encabezados = ["#", "Nombre"] + [LABEL_CONCEPTO_CORTO.get(c, c) for c in conceptos_visibles] + ["Total"]
+    encabezados = ["#", "Nombre", "Horas"] + [LABEL_CONCEPTO_CORTO.get(c, c) for c in conceptos_visibles] + ["Total"]
     filas = [[_celda(h, negrita=True, tamano=7.5, color=BLANCO, alineacion=TA_CENTER) for h in encabezados]]
     estilo = list(_ESTILO_BASE_DETALLE)
     for i, (_, fila) in enumerate(personas.iterrows(), start=1):
         celdas = [
             _celda(str(i), alineacion=TA_CENTER),
             _celda(fila["Nombre_Personal"], tamano=7.5),
+            _celda(f"{fila['Horas']:.1f}", alineacion=TA_RIGHT, tamano=7.5),
         ]
         for concepto in conceptos_visibles:
             celdas.append(_celda(_fmt_clp(fila[concepto]), alineacion=TA_RIGHT, tamano=7.5))
@@ -582,10 +583,14 @@ def _tabla_ranking(personas: pd.DataFrame) -> Table:
             estilo.append(("BACKGROUND", (0, i), (-1, i), GRIS_CLARO))
 
     ancho_num = 0.7 * cm
-    ancho_nombre = 5.3 * cm
+    ancho_nombre = 4.8 * cm
+    ancho_horas = 1.5 * cm
     ancho_total = 2.4 * cm
-    ancho_concepto = (ANCHO_CONTENIDO - ancho_num - ancho_nombre - ancho_total) / max(len(conceptos_visibles), 1)
-    col_widths = [ancho_num, ancho_nombre] + [ancho_concepto] * len(conceptos_visibles) + [ancho_total]
+    ancho_concepto = (
+        (ANCHO_CONTENIDO - ancho_num - ancho_nombre - ancho_horas - ancho_total)
+        / max(len(conceptos_visibles), 1)
+    )
+    col_widths = [ancho_num, ancho_nombre, ancho_horas] + [ancho_concepto] * len(conceptos_visibles) + [ancho_total]
 
     t = Table(filas, colWidths=col_widths)
     t.setStyle(TableStyle(estilo))

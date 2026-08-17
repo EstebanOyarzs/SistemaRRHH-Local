@@ -217,6 +217,7 @@ interface PersonaImporte {
   Cargo: string;
   Gerencia: string;
   PorConcepto: Record<string, number>;
+  Horas: number;
   Total: number;
 }
 
@@ -231,11 +232,13 @@ function agregarPorPersona(rows: Detalle[]): PersonaImporte[] {
         Cargo: d.Cargo,
         Gerencia: d.Gerencia,
         PorConcepto: {},
+        Horas: 0,
         Total: 0,
       };
       map.set(d.Cod_SAP, persona);
     }
     persona.PorConcepto[d.Concepto] = (persona.PorConcepto[d.Concepto] ?? 0) + d.Importe;
+    persona.Horas += d.Cantidad_Horas;
     persona.Total += d.Importe;
   }
   return Array.from(map.values());
@@ -259,6 +262,7 @@ function construirColumnasRanking(conceptosVisibles: string[]): Columna<PersonaI
     { id: "nombre", label: "Nombre", valor: (d) => d.Nombre_Personal, render: (d) => d.Nombre_Personal },
     { id: "cargo", label: "Cargo", valor: (d) => d.Cargo, render: (d) => d.Cargo },
     { id: "gerencia", label: "Gerencia", valor: (d) => d.Gerencia, render: (d) => d.Gerencia },
+    { id: "horas", label: "Horas", valor: (d) => d.Horas, render: (d) => d.Horas.toFixed(1) },
     ...conceptosVisibles.map((concepto) => ({
       id: `concepto-${concepto}`,
       label: LABEL_CONCEPTO_CORTO[concepto] ?? concepto,

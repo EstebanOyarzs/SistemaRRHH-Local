@@ -453,6 +453,17 @@ un wrapper delgado.
       ranking del PDF (no entraban junto con las columnas de Concepto en
       el ancho de página) — si hace falta ese detalle, está en la tabla
       "Desglose por Subgerencia" de más arriba en el mismo informe.
+    - Ronda 8 (17-ago-2026): se agregó columna **"Horas"** (Cantidad_Horas
+      total, no desglosada por Concepto) tanto al "Ranking de Importe" del
+      HTML como a "Ranking de Colaboradores"/"Ranking Capex" del PDF — el
+      usuario pidió poder ver el total de horas extra de cada trabajador,
+      no solo el monto. En el HTML, `PersonaImporte.Horas` se acumula en
+      `agregarPorPersona()` igual que `Total`, columna nueva entre
+      Gerencia y el desglose por Concepto. En el PDF,
+      `_ranking_por_concepto()` agrega `Horas` vía `.agg(Total=...,
+      Horas=("Cantidad_Horas", "sum"))`, columna nueva entre Nombre y el
+      desglose por Concepto (hubo que sumar `Cantidad_Horas` al `SELECT`
+      de `sobretiempo_detalle` en `_datos_gerencia()`, antes no se traía).
   - **Celdas de tabla envueltas en `Paragraph`, nunca strings planos**
     (gotcha encontrado 17-ago-2026): un string plano dentro de una celda de
     `Table` de reportlab NO hace salto de línea — si el texto no entra en
