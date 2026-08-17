@@ -37,6 +37,11 @@ models/*
 onedrive_sync/*
 !onedrive_sync/.gitkeep
 
+# Dotacion sincronizada localmente (planillas con datos personales reales
+# de empleados - RUT, nombres, cargo - no se versionan; ver CLAUDE.md
+# "Dashboard de Capacitacion", el sistema no la lee automaticamente)
+Dotacion/
+
 # Configuracion sensible
 .env
 *.env.local

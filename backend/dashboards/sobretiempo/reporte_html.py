@@ -23,6 +23,7 @@ import pandas as pd
 
 from backend.config import PROJECT_ROOT
 from backend.dashboards.sobretiempo.db import TABLE_DETALLE, TABLE_RESUMEN, engine
+from backend.dashboards.sobretiempo.normalizar import MESES_INV
 
 DIST_DIR = PROJECT_ROOT / "frontend" / "dist"
 REPORTES_DIR = PROJECT_ROOT / "Sobretiempo" / "data" / "reportes"
@@ -60,12 +61,24 @@ def _leer_assets_build():
     return js_path.read_text(encoding="utf-8"), css_path.read_text(encoding="utf-8")
 
 
-def _tabla_a_json(tabla: str, columnas_bool: list[str]) -> str:
-    df = pd.read_sql_query(f"SELECT * FROM {tabla}", engine)
+def _tabla_a_json(df: pd.DataFrame, columnas_bool: list[str]) -> str:
+    df = df.copy()
     for col in columnas_bool:
         if col in df.columns:
             df[col] = df[col].astype(bool)
     return df.to_json(orient="records")
+
+
+def _ultimo_mes_anio(df_resumen: pd.DataFrame) -> tuple[str | None, int | None]:
+    """Mes (nombre) y año del último mes cerrado en los datos — para
+    nombrar el archivo exportado con el mes al que corresponde (ej.
+    "Junio_2026"), no solo con la fecha/hora de generación."""
+    cerrado = df_resumen[df_resumen["Mes_Cerrado"] == 1]
+    if cerrado.empty:
+        return None, None
+    ultimo_mes = int(cerrado["Mes_Num"].max())
+    anio = int(cerrado["Anio"].dropna().iloc[0])
+    return MESES_INV[ultimo_mes], anio
 
 
 def generar_reporte_html(output_path: Path | None = None) -> Path:
@@ -76,8 +89,11 @@ def generar_reporte_html(output_path: Path | None = None) -> Path:
     generado.
     """
     js, css = _leer_assets_build()
-    resumen_json = _tabla_a_json(TABLE_RESUMEN, COLUMNAS_BOOL_RESUMEN)
-    detalle_json = _tabla_a_json(TABLE_DETALLE, COLUMNAS_BOOL_DETALLE)
+    df_resumen = pd.read_sql_query(f"SELECT * FROM {TABLE_RESUMEN}", engine)
+    df_detalle = pd.read_sql_query(f"SELECT * FROM {TABLE_DETALLE}", engine)
+    resumen_json = _tabla_a_json(df_resumen, COLUMNAS_BOOL_RESUMEN)
+    detalle_json = _tabla_a_json(df_detalle, COLUMNAS_BOOL_DETALLE)
+    mes_nombre, anio = _ultimo_mes_anio(df_resumen)
 
     ahora = datetime.now()
     generado_el = ahora.strftime("%d-%m-%Y, %H:%M:%S")
@@ -115,7 +131,12 @@ def generar_reporte_html(output_path: Path | None = None) -> Path:
 
     if output_path is None:
         REPORTES_DIR.mkdir(parents=True, exist_ok=True)
-        output_path = REPORTES_DIR / f"sobretiempo_{ahora.strftime('%Y-%m-%d_%H%M%S')}.html"
+        # Nombre incluye el mes de los datos (ej. "Junio_2026"), ademas del
+        # timestamp de generacion — el reporte se puede generar meses
+        # despues del cierre de los datos, asi que la fecha de generacion
+        # sola no dice a que mes corresponde el contenido.
+        sufijo_mes = f"{mes_nombre}_{anio}_" if mes_nombre and anio else ""
+        output_path = REPORTES_DIR / f"Sobretiempo_{sufijo_mes}{ahora.strftime('%Y-%m-%d_%H%M%S')}.html"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(html, encoding="utf-8")
     return output_path

@@ -76,6 +76,51 @@ Hecho:
   detallado "Texto expl.CC-nómina", que tenía ~20 variantes en vez de 5
   categorías limpias).
 
+- **Tercer paso del pipeline de Sobretiempo: informes ejecutivos PDF por
+  Gerencia** (17-ago-2026): ver "Reportes sin servidor" más abajo para el
+  detalle completo — `Sobretiempo/generar_informes_gerencia.py`, un PDF por
+  Gerencia con solo sus propios datos (KPIs, semáforo de Estado, evolución
+  mensual, desglose por Subgerencia, gasto por Concepto y Ranking de
+  Colaboradores), con iteraciones de UX post-lanzamiento el mismo día
+  (celdas con salto de línea en vez de texto superpuesto, palabra de estado
+  en vez de número/umbral para Ritmo de gasto, prefijo `(Alerta) ` en el
+  nombre de archivo para las Gerencias sobre el ritmo esperado).
+
+- **Bug de datos encontrado y corregido: `sobretiempo_resumen` sub-contaba
+  el gasto real en cuentas con diferencias de mayúscula/minúscula entre
+  hojas** (17-ago-2026, encontrado por el usuario comparando el dashboard
+  HTML contra el informe PDF — Gerencia de Personas mostraba $3.600.948
+  gastado en el HTML pero $9.930.397 en el PDF). Causa raíz: el criterio
+  "con presupuesto asignado" está VALIDADO a nivel Ceco + Cuenta Contable
+  (ver `enriquecer_detalle()` en `normalizar.py`, y ya lo usan correctamente
+  `sobretiempo_detalle` y `sobretiempo_resumen_gerencia`), pero
+  `construir_resumen()` (la función que arma `sobretiempo_resumen`, tabla
+  que lee el panel "Resumen"/Alerta del dashboard Y el % Gastado del PDF)
+  lo recalculaba por su cuenta agrupando por `KEY_ORG` completo (incluye
+  Gerencia+Subgerencia+Unidad, no solo Ceco+Cuenta) — dos criterios
+  distintos para el mismo campo. Cuando el mismo Ceco+Cuenta tiene
+  presupuesto cargado bajo una Subgerencia ("Co Subgerencia de Personas")
+  pero gasto real registrado bajo una variante con otra mayúscula ("CO
+  Subgerencia de Personas", ~$6.3M en este caso), el criterio por
+  `KEY_ORG` completo los trata como líneas distintas y el gasto de la
+  variante sin match queda excluido del "% Gastado"/"Gastado" — sub-contando
+  el dashboard HTML (el número correcto, validado, es el más alto: el que
+  ya mostraba el PDF/`sobretiempo_resumen_gerencia`). Fix: `construir_resumen()`
+  ahora calcula `Con_Presupuesto_Asignado` agrupando SOLO por
+  Ceco+Cuenta_Contable, igual que `enriquecer_detalle()`. Se regeneraron
+  `sobretiempo_resumen`/`sobretiempo_resumen_gerencia` directamente desde
+  las tablas `sobretiempo_detalle`/`sobretiempo_presupuesto` ya cargadas
+  (sin necesitar re-subir el Excel — `construir_resumen()` +
+  `construir_resumen_gerencia()` corridos a mano sobre esas dos tablas,
+  con `respaldar_db()` antes de sobrescribir). Verificado: ambas tablas
+  ahora coinciden en $9.930.397 para Gerencia de Personas, y "% Gastado"
+  del PDF pasó de 16.8% a 46.3% (ahora consistente con "% Ejecutado", que
+  ya venía bien). **Esta discrepancia no era exclusiva de Sobretiempo de
+  Personas** — cualquier Gerencia/Sociedad con una variante de mayúscula
+  entre la hoja PPTO y la hoja DETALLE del Excel de origen puede tener el
+  mismo problema; quedó corregido de raíz para toda carga futura, no solo
+  para los datos ya cargados.
+
 Pendiente (orden sugerido, ver spec original del usuario para el detalle de cada módulo):
 1. Más planillas/dashboards siguiendo el mismo patrón que Sobretiempo/Capacitación
    (ver abajo), agregando su card en `frontend/src/pages/DashboardsHomePage.tsx`
@@ -189,7 +234,13 @@ un wrapper delgado.
   `0`/`1` en vez de `true`/`false`, y aunque el JS los trata igual por
   truthy/falsy, no coincidiría con lo que devuelve la API real. Guarda en
   `Sobretiempo/data/reportes/` (gitignored — el HTML lleva nombres/RUT
-  reales de empleados).
+  reales de empleados). Nombre del archivo incluye el mes de LOS DATOS
+  (ej. `Sobretiempo_Junio_2026_2026-08-17_132858.html`), no solo el
+  timestamp de generación (17-ago-2026, a pedido del usuario) — el mes se
+  calcula igual que en el PDF (`_ultimo_mes_anio()`, mismo criterio de
+  "último mes cerrado" que usa `reporte_pdf.py`), porque el reporte se
+  puede generar bastante después del cierre de los datos y el timestamp
+  solo no dice a qué mes corresponde el contenido.
 - **Capacitación** (`Capacitacion/generar_reporte_capacitacion.py`): arma
   el mismo Excel de 3 hojas que `GET /exportar-excel`. La lógica de armado
   del workbook (antes vivía duplicada dentro de `router.py`) se movió a
@@ -198,6 +249,224 @@ un wrapper delgado.
   `construir_workbook()`) — el endpoint HTTP y el script de consola llaman
   a las mismas funciones, nunca se duplica la lógica. Guarda en
   `Capacitacion/data/reportes/` (gitignored, mismo motivo).
+- **Informes ejecutivos PDF de Sobretiempo, uno por Gerencia**
+  (`Sobretiempo/generar_informes_gerencia.py`, 17-ago-2026): a diferencia
+  del reporte HTML (que es el dashboard completo con todas las Gerencias),
+  este genera un PDF liviano por Gerencia, con SOLO los datos de esa
+  Gerencia — pensado para mandarle a cada gerente el estado de su propia
+  área, sin que vea las demás. La lógica vive en
+  `backend/dashboards/sobretiempo/reporte_pdf.py`
+  (`generar_informes_gerencia()`), armado con `reportlab` (ya en
+  `requirements.txt`, no depende de `frontend/dist` como el reporte HTML).
+  Un PDF por cada Gerencia con al menos un mes cerrado en
+  `sobretiempo_resumen_gerencia`. Estructura: KPIs (Presupuesto anual /
+  Gasto acumulado / Saldo disponible / % Ejecutado), un semáforo de Estado,
+  gráfico de evolución mensual (Real acumulado vs. línea de Presupuesto
+  anual), desglose por Subgerencia (si tiene más de una), gasto por
+  Concepto, y Ranking de Colaboradores (Top 10 por Importe acumulado en el
+  año — agregado por persona, columnas Nombre/Cargo/Subgerencia/Importe/%,
+  ver "Ranking de personas" abajo). Una página salvo Gerencias con muchas
+  Subgerencias/personas, que pasan a 2 (probado con `gerencia_de_distribucion`,
+  la más grande de las 19).
+  - **Semáforo de Estado**: reusa la MISMA metodología y umbrales que la
+    tabla "Alerta" del dashboard (ver "Frontend" más abajo) para el CALCULO
+    interno — "% Gastado" = `Pct_Ejecucion_Acumulado` agregado desde
+    `sobretiempo_resumen` (umbral 50%/70%) y "Ritmo de gasto" =
+    `Real_Acumulado / Presupuesto_Total_Anual` normalizado por el mes
+    transcurrido, agregado desde `sobretiempo_resumen_gerencia` (umbral
+    1.0x/1.3x) — los dos numeros pueden diferir bastante entre sí (un caso
+    real: 16.8% vs 46.3% en la misma Gerencia) porque miden cosas distintas,
+    es esperado. **A diferencia del dashboard, el PDF NO muestra el numero
+    ni el umbral del Ritmo** (a pedido del usuario, 17-ago-2026 — el numero
+    es ruido para un gerente) — solo la palabra de estado resultante
+    (`PROGRESO_LABEL` en `reporte_pdf.py`: "Progreso de gasto dentro de lo
+    esperado" / "sobre lo esperado" / "excesivo a lo esperado"). "% Gastado"
+    sí se sigue mostrando como número (no fue parte del pedido).
+  - **Ranking de personas** (agregado 17-ago-2026 a pedido del usuario — a
+    diferencia del resto del informe, este sí expone nombre y monto
+    individual, es información sensible dentro de un documento ya
+    confidencial/interno): Top 10 por Cod_SAP+Nombre, sumando Importe de
+    TODO `sobretiempo_detalle` de la Gerencia en el año (no solo cuentas
+    con presupuesto asignado, mismo criterio que "Gasto por Concepto").
+  - **Prefijos en el nombre del archivo** para identificar casos especiales
+    a simple vista en el explorador de Windows sin abrir cada PDF (el "("
+    ordena alfabético antes que las letras, así quedan arriba de la lista):
+    `(Alerta) Sobretiempo_...pdf` si el Ritmo de gasto agregado de la
+    Gerencia es >= 1.0x (advertencia o crítico, mismo umbral que el
+    semáforo; agregado 17-ago-2026), o `(Sin gasto) Sobretiempo_...pdf` si
+    el Gasto acumulado de la Gerencia es exactamente $0 (agregado
+    17-ago-2026, pedido a mitad de la sesión de la ronda de ajustes de UX
+    de abajo). Son excluyentes entre sí (`Sin gasto` tiene prioridad, ya
+    que si no hay gasto el Ritmo siempre da 0).
+  - **Dos rondas de ajustes de UX/contenido** (17-ago-2026, mismo día del
+    lanzamiento):
+    - Ronda 1: título fusionado en una sola línea ("Informe de Sobretiempo
+      {Gerencia}", ya no en un párrafo aparte); subtítulo cambiado de
+      "Acumulado a {Mes} {Año}" a "Gasto a {Mes} {Año}"; el generador ya no
+      usa `getpass.getuser()` (mostraba el usuario de Windows que corrió el
+      script, ej. "eoyarzun") sino el texto fijo "Equipo de Compensaciones"
+      (constante `GENERADO_POR` en `reporte_pdf.py`); el gráfico de
+      Evolución mensual muestra el valor en pesos sobre cada punto de AMBAS
+      líneas (Real acumulado y Presupuesto anual, vía
+      `chart.lineLabelFormat`/`lineLabelNudge` de reportlab), y la leyenda
+      del gráfico se armó con una muestra de línea real (`shapes.Line`) en
+      vez de simular el trazo con caracteres de guion en el texto; pasada
+      de ortografía en español latinoamericano (tildes: "atención",
+      "crítico", "evolución", "ejecución", "año", "página", etc.) y
+      eliminación de guiones largos (—) como puntuación en todo el texto
+      visible del PDF, reemplazados por punto o coma según corresponda (el
+      usuario fue explícito: "no dejes guiones, son . o ,").
+    - Ronda 2: el nombre de la Gerencia en el título se probó en rojo
+      (markup `<font color>` de `Paragraph`) y el usuario pidió volver
+      atrás, mismo color navy que el resto del título; footer acortado de
+      "Documento de uso interno. No distribuir fuera de la Gerencia." a
+      "Documento de uso interno. No distribuir."; la frase explicativa del
+      semáforo de Estado se acortó (era muy larga/poco clara) a "El Estado
+      general combina dos indicadores: % Gastado (ejecución acumulada a la
+      fecha) y Progreso de gasto (ritmo actual proyectado a fin de año).";
+      más espaciado entre título/subtítulo/línea de "Generado el..." (venía
+      muy apretado); se agregó una tabla "Mes / Gasto del mes / Gasto
+      acumulado" debajo del gráfico de Evolución mensual porque el gráfico
+      solo mostraba el acumulado, no el gasto puntual de cada mes
+      (`_tabla_evolucion_mensual()`, usa el campo `Importe_Real_Mes` que ya
+      traía `sobretiempo_resumen_gerencia` pero no se estaba usando); y se
+      agregó el logo corporativo real (Chilquinta) en la cabecera —
+      `assets/logo_chilquinta.jpg` (carpeta nueva en la raíz del proyecto,
+      compartida entre dashboards, no es específica de Sobretiempo),
+      insertado con `reportlab.platypus.Image`, tamaño calculado a partir
+      de la proporción real del archivo vía `ImageReader.getSize()` en vez
+      de hardcodear el aspect ratio (`_logo_flowable()` en
+      `reporte_pdf.py`, devuelve `None` sin romper el informe si el
+      archivo no está).
+    - **Gotcha encontrado en esta ronda**: si el usuario tiene un PDF
+      generado abierto en un visor (Edge, Acrobat, etc.) mientras se corre
+      el generador de nuevo, Windows bloquea la escritura y
+      `SimpleDocTemplate.build()` tira `PermissionError` — antes cortaba
+      toda la corrida (ninguna Gerencia después de la bloqueada se
+      generaba). Ahora `generar_informes_gerencia()` atrapa ese error por
+      Gerencia, imprime un aviso, y sigue con las demás.
+    - Ronda 3: el logo pasó a ir ARRIBA del título (apilado, tipo membrete),
+      no al costado en una tabla de 2 columnas como había quedado en la
+      Ronda 2 (`_logo_flowable()` ahora es un flowable más en el `story`,
+      antes del bloque de título, sin `Table` envolvente); se sacó la
+      columna "Trab. HE" (Trabajadores con Horas Extra) de la tabla
+      Desglose por Subgerencia, a pedido del usuario; el título "Ranking de
+      Colaboradores (Top 10 por Importe)" se acortó a solo "Ranking de
+      Colaboradores" (el Top 10 se mantiene en la lógica, solo se sacó del
+      texto visible); en el gráfico de Evolución mensual, la línea de
+      Presupuesto anual (que repetía el mismo monto en los 12 puntos) dejó
+      de mostrar un valor por punto — ahora el monto se muestra UNA sola
+      vez, centrado arriba del gráfico ("Presupuesto anual: $XXX.XM"), la
+      línea Real acumulado sigue con su valor en cada punto; se agregó una
+      barra de progreso horizontal roja (Gastado) + verde (Disponible)
+      debajo de los KPIs (`_barra_progreso()`), calcada del panel "Resumen"
+      del dashboard HTML, y una línea divisoria roja debajo de cada título
+      de sección (helper `seccion()` local a `_construir_pdf`, usa
+      `HRFlowable`) para acercar el look del PDF al de las tarjetas del
+      dashboard, a pedido del usuario ("evalua una mejora visual, que sea
+      simil al diseño del informe general html").
+    - **Gotcha de reportlab encontrado en la Ronda 3**: `chart.lineLabelArray`
+      (para poner un texto de label distinto por punto, incluido `None`
+      para no dibujar nada en un punto puntual) NO se usa a menos que
+      `chart.lineLabelFormat` sea el string literal `"values"` — con
+      `lineLabelFormat=None` (el default) no se dibuja NINGÚN label sin
+      importar lo que tenga `lineLabelArray`, aunque no tira ningún error
+      (se ve como que el atributo simplemente no hizo nada). Confirmado
+      leyendo el código fuente de `HorizontalLineChart._innerDrawLabel` en
+      la librería.
+    - Ronda 4: se sacó por completo la barra de progreso Gastado/Disponible
+      agregada en la Ronda 3 (`_barra_progreso()` eliminada del código, no
+      solo del `story` — el usuario no la quiso en el PDF, a diferencia del
+      dashboard HTML donde sí queda); "Ranking de Colaboradores" pasó a
+      "Ranking de Colaboradores con mayores gastos"; título/subtítulo/línea
+      de "Generado el..." pasaron a centrados (`alignment=TA_CENTER` en los
+      3 `ParagraphStyle`) y el logo también se centró horizontalmente
+      (`logo.hAlign = "CENTER"`), para que el título quede alineado con el
+      logo arriba (ambos centrados en el ancho de la página, ya no
+      alineados a la izquierda).
+    - Ronda 5: cada sección (título + línea divisoria + contenido: tabla,
+      gráfico, nota) se envuelve en `reportlab.platypus.KeepTogether` — si
+      no entra completa en lo que queda de la página actual, reportlab la
+      pasa entera a la página siguiente en vez de cortarla a mitad de tabla
+      o gráfico, a pedido del usuario. Probado con la Gerencia más grande
+      (Distribución, 4 Subgerencias + 4 Conceptos + Ranking de 10): la
+      página 1 corta limpio después de "Evolución mensual" y la página 2
+      arranca con "Desglose por Subgerencia" completo. Ojo: `KeepTogether`
+      solo garantiza "empezar en página nueva si no entra en la actual" —
+      si una sección fuera más alta que una página entera igual se
+      partiría (no ocurre hoy con los datos reales, pero es la limitación
+      de la técnica, no da una garantía absoluta).
+    - Ronda 6 (cambio de alcance, no solo UX): el informe distingue
+      **Opex vs. Capex por Centro de Costo** — un Ceco es Opex si termina
+      en "10099", Capex si no (incluye "SIN CECO (Cargo a Proyecto)"),
+      criterio dado por el usuario. **TODO el informe queda acotado a
+      Opex** (KPIs, Estado, Evolución mensual, Subgerencias, Concepto,
+      Ranking principal) — Capex solo aparece al final, como sección
+      complementaria "Ranking Capex" (mismo Top 10 por Importe, pero
+      calculado solo sobre Ceco Capex, con nota aclaratoria de que es
+      información complementaria). Esto obligó a cambiar la FUENTE de
+      datos de KPIs/Estado/Subgerencias/Evolución: pasaron de
+      `sobretiempo_resumen_gerencia` (agregada a nivel Gerencia+
+      Subgerencia+Mes, SIN columna Ceco — no se puede partir Opex/Capex) a
+      `sobretiempo_resumen` (nivel Ceco+Cuenta+Mes, sí tiene Ceco),
+      replicando en pandas la misma agregación por Subgerencia que antes
+      hacía `construir_resumen_gerencia()` en `normalizar.py` (ver
+      `_datos_gerencia()` en `reporte_pdf.py`). El campo "Trabajadores con
+      HE" se eliminó del todo en este cambio (ya no se mostraba en ningún
+      lado desde la Ronda 3, y `sobretiempo_resumen` no tiene esa columna
+      para recalcularlo). Validación cruzada interesante: en la práctica,
+      Capex resultó ser casi 1:1 con el cargo "Projects" y Opex con
+      "Payroll" en los datos reales — refuerza que el criterio del sufijo
+      del Ceco es correcto.
+    - **Gotcha de pandas encontrado en la Ronda 6**: filtrar un DataFrame
+      de 0 filas con una máscara booleana (ej. `df[serie_booleana]`) hace
+      que pandas descarte TODAS las columnas si tanto el DataFrame como la
+      máscara están vacíos — el resultado queda con 0 filas Y 0 columnas,
+      aunque el DataFrame original sí tenía sus columnas. Rompía con
+      `KeyError: 'Importe'` para Gerencias sin ningún registro en
+      `sobretiempo_detalle` (ej. "Gerencia de Adquisiciones"). Fix: si
+      `det.empty`, saltear el filtrado Opex/Capex y usar el mismo
+      DataFrame vacío (con columnas) para ambos — da lo mismo Opex que
+      Capex cuando no hay ninguna fila.
+    - Ronda 7 (17-ago-2026): "Ranking de Colaboradores con mayores gastos"
+      y "Ranking Capex" pasaron al MISMO diseño pivoteado que el "Ranking
+      de Importe" del dashboard HTML (ver más abajo, "Frontend") — una
+      fila por persona con una columna de Importe por Concepto (Hora
+      Extra, Turnos, Citación, etc.) + columna Total, en vez de una sola
+      columna "Importe" (que ya sumaba todo por persona, pero sin abrir el
+      detalle por concepto). `_ranking_por_concepto()` reemplaza a la
+      función `_ranking()` anterior — agrupa por Cod_SAP+Nombre+Concepto,
+      pivotea Concepto a columnas, calcula Total por separado (sumando
+      TODO el Importe de la persona, no solo `CONCEPTOS_RANKING` conocidos,
+      por si aparece una categoría nueva no listada) y se queda con el Top
+      10 por Total. `_tabla_ranking()` oculta las columnas de Concepto en
+      $0 para TODAS las personas mostradas (igual criterio que el
+      dashboard) — por eso "Ranking de Colaboradores" y "Ranking Capex" de
+      un mismo informe pueden mostrar distintas columnas de Concepto entre
+      sí (ej. Capex nunca tuvo "Rot Horas Extra/Turnos" en los datos
+      reales de Distribución, esa columna no aparece ahí pero sí en el
+      ranking Opex). `CONCEPTOS_RANKING`/`LABEL_CONCEPTO_CORTO` quedaron
+      duplicados en Python (`reporte_pdf.py`) y TypeScript
+      (`SobretiempoDashboardPage.tsx`) — son proyectos separados sin canal
+      de constantes compartidas, hay que actualizar los dos si la lista de
+      Concepto cambia. Se sacaron las columnas Cargo/Subgerencia/% del
+      ranking del PDF (no entraban junto con las columnas de Concepto en
+      el ancho de página) — si hace falta ese detalle, está en la tabla
+      "Desglose por Subgerencia" de más arriba en el mismo informe.
+  - **Celdas de tabla envueltas en `Paragraph`, nunca strings planos**
+    (gotcha encontrado 17-ago-2026): un string plano dentro de una celda de
+    `Table` de reportlab NO hace salto de línea — si el texto no entra en
+    el ancho de columna, se sale de la celda y se dibuja encima de la
+    columna de al lado (texto superpuesto/ilegible). Pasaba con nombres de
+    Subgerencia largos ("Subgerencia de Mantenimiento de Distribución") y
+    con la línea larga del semáforo de Estado. Fix: helper `_celda()` en
+    `reporte_pdf.py` envuelve todo texto de celda en un `Paragraph` (con
+    `xml.sax.saxutils.escape()` porque `Paragraph` interpreta un subset de
+    HTML), que sí hace salto de línea dentro del ancho de columna. Aplica a
+    cualquier tabla nueva de este informe o de futuros reportes PDF.
+  - Guarda en `Sobretiempo/data/reportes/gerencias/` (gitignored, mismo
+    motivo que los otros reportes — nombres/montos reales por persona y
+    área). Probado 17-ago-2026 contra la base real (19 Gerencias).
 - Los comandos completos (con rutas absolutas, listos para copiar) están en
   `Sobretiempo/Ejecutar.txt` y `Capacitacion/Ejecutar.txt`.
 
@@ -315,7 +584,13 @@ Decisiones tomadas con el usuario (13-ago-2026):
   (`AppLayout` = sidebar + topbar), `src/components/SearchableSelect.tsx` (select con buscador,
   un solo valor — hoy solo lo usa el filtro Mes) + `src/components/SearchableMultiSelect.tsx`
   (mismo estilo pero multi-selección, checkbox por opción, el menú no se cierra al elegir —
-  usado por los otros 6 filtros de Sobretiempo, ver abajo), `src/pages/` (una página por ruta),
+  usado por los otros 6 filtros de Sobretiempo, ver abajo). Tiene una prop opcional
+  `permitirSeleccionarTodo` (17-ago-2026, a pedido del usuario, SOLO habilitada en el filtro
+  Centro Costo — es el único con una lista larga donde tiene sentido) que agrega un item
+  "Seleccionar los N filtrados" arriba de la lista cuando hay texto de búsqueda activo: un
+  click agrega TODOS los resultados que matchean el texto a la selección (sin pisar lo ya
+  elegido), y si ya estaban todos seleccionados el mismo item pasa a "Quitar los N filtrados".
+  `src/pages/` (una página por ruta),
   `src/charts/registerCharts.ts` (registro central de Chart.js + paleta de charts, incluye
   `warning` ademas de `red`/`navy`/`success` para los badges de alerta/ritmo). Charting con
   `chart.js` + `react-chartjs-2` + `chartjs-plugin-datalabels` (valores/% sobre las barras,
@@ -375,6 +650,82 @@ Decisiones tomadas con el usuario (13-ago-2026):
     muestran la lista COMPLETA (sin top-N) en un contenedor con scroll vertical + header sticky
     (`.sobretiempo__table-wrap--scroll` + `--rows20`/`--rows15`/`--rows10` según cuántas filas
     se quieren ver sin scrollear — Detalle 20, Ranking de Importe 15, Alerta 10).
+  - **"Ranking de Importe" pasó de una fila por transacción a una fila por
+    persona, con desglose por Concepto en columnas + columna Total**
+    (17-ago-2026, en dos pasos). Bug original reportado por el usuario:
+    "Carla Navarro" aparecía muchas veces en el ranking, incluso repetida
+    con el mismo Concepto "Hora Extra" — porque `sobretiempo_detalle` es
+    transaccional (un registro por persona+Concepto+MES, ver "Patrón de
+    dashboards"), y a veces más de uno por mes si el mismo Concepto agrupa
+    más de un Cuenta_Contable/Ceco (ej. "Horas Extras 50%" y "Horas Extras
+    100%" son las dos Concepto="Hora Extra"); mostrar esas filas tal cual
+    en un ranking fragmentaba a cada persona en N filas en vez de una. Un
+    primer fix agregó por Cod_SAP+Concepto (una fila por persona+concepto),
+    pero el usuario pidió ir más lejos: rankear por el Total de la persona,
+    con el desglose por concepto como columnas adicionales en la MISMA fila
+    (formato pivot) en vez de filas separadas. Diseño final en
+    `SobretiempoDashboardPage.tsx`: `agregarPorPersona()` agrupa por
+    `Cod_SAP` (no por `Nombre_Personal`, para no fusionar por error a dos
+    personas distintas con el mismo nombre) y arma `PorConcepto: Record<string,
+    number>` (Importe sumado por Concepto) + `Total`. `COLUMNAS_TRANSACCIONES`
+    (tipo `Columna<PersonaImporte>[]`) arma sus columnas de Concepto a
+    partir de la constante fija `CONCEPTOS_RANKING` (los 5 Concepto que
+    existen hoy: Hora Extra, Turnos, Citación, Rot Horas Extra/Turnos, Bono
+    Disponibilidad/Interluz/Alerta). Orden por defecto ahora es por "Total"
+    descendente (antes por "Importe" de una transacción individual). La
+    tabla quedó más ancha (hasta Nombre+Cargo+Gerencia+5 Concepto+Total = 9
+    columnas) — ya andaba con scroll horizontal (`overflow-x: auto` en
+    `.sobretiempo__table-wrap`), no hizo falta tocar CSS para eso.
+    Dos ajustes de UX el mismo día: (1) "Rot Horas Extra/Turnos" y "Bono
+    Disponibilidad/Interluz/Alerta" son Concepto con pocas personas pero
+    nombres largos que ensanchaban la tabla sin aportar densidad de datos —
+    quedaron con label acortado (`LABEL_CONCEPTO_CORTO`: "Rot HE/Turnos" y
+    "Bono Disp.") y el nombre completo como tooltip nativo (`title` en el
+    `<th>`, campo nuevo `titulo?` agregado a la interfaz genérica
+    `Columna<T>` en `utils/tablas.ts`). (2) Una columna de Concepto en $0
+    para TODAS las personas del alcance de filtros actual se oculta en vez
+    de mostrarse vacía — `construirColumnasRanking()` pasó de ser una
+    constante de módulo a una función, llamada desde un `useMemo`
+    (`conceptosVisiblesRanking`) que filtra `CONCEPTOS_RANKING` contra
+    `rankingImporte` antes de armar las columnas; esto es la postura
+    contraria a la de otras columnas dinámicas del dashboard (ver "Concepto
+    solo es válido para..." y los filtros en cascada más abajo), acá se
+    prefirió ocultar por sobre mantener fijo, a pedido explícito del
+    usuario.
+  - **Header (título + los 7 filtros) fijo al hacer scroll** ("inmovilizar
+    filas superiores" tipo Excel, 17-ago-2026, pedido del usuario):
+    `.sobretiempo__header` en `SobretiempoDashboardPage.css` usa
+    `position: sticky; top: 0` con fondo `--color-gray-bg` (mismo que el
+    de la página, para que el contenido que pasa por debajo quede tapado)
+    y un borde inferior para separarlo visualmente del resto al quedar
+    pegado arriba.
+    - **Bug encontrado y corregido en el mismo cambio**: en el HTML
+      exportado standalone (sin login/routing, ver más abajo), `main.tsx`
+      envolvía la página en `<div className="app-content">` — esa clase
+      trae `overflow-y: auto` porque en el layout normal (`AppLayout`)
+      vive dentro de un contenedor flex con altura acotada
+      (`.app-main`/`.app-layout`, `min-height: 100vh`) y ahí SÍ hace
+      scroll interno de verdad. Sin ese contexto de altura, el mismo
+      `overflow-y: auto` igual convierte al div en "contenedor de scroll"
+      a ojos del navegador (aunque nunca llegue a scrollear él solo,
+      porque crece con su contenido) — y eso rompe `position: sticky` del
+      header: deja de pegarse porque el sticky se calcula relativo a ESE
+      contenedor, no al scroll real de la página. Se reprodujo visualmente
+      con Chrome (MCP) sirviendo el HTML exportado por un `http.server` de
+      Python en `Sobretiempo/data/reportes/` (los archivos exportados son
+      autocontenidos, no necesitan el backend — ver "Reportes sin
+      servidor"). Fix: en el branch exportado de `main.tsx`, el wrapper ya
+      no reusa la clase `app-content` — pasa a un `<div style={{padding:
+      "1.75rem"}}>` sin overflow, dejando el scroll real a cargo de
+      html/body como corresponde en ese contexto standalone.
+    - **Nota de la sesión**: el `http.server` de verificación se cortó
+      solo a los segundos de levantarlo (mismo patrón que uvicorn, ver
+      "Gotchas del entorno" — parece que el EDR mata cualquier
+      `venv\Scripts\python.exe` que escuche en red, no solo FastAPI). No
+      se pudo re-confirmar visualmente el fix después de aplicarlo, pero
+      la causa raíz quedó identificada con certeza (se reprodujo el bug
+      ANTES del fix, con capturas) y la solución es un cambio de CSS
+      bien entendido, no una corrección especulativa.
   - **Botón "Descargar reporte (HTML)"** (`src/utils/exportarHtml.ts`): arma un HTML
     autocontenido reutilizando el MISMO bundle JS/CSS que la app en vivo (lo lee del propio
     `<script>`/`<link>` de la pagina, `document.querySelector('script[type="module"][src*="/assets/"]')`)
@@ -592,6 +943,8 @@ cd frontend; node ".\node_modules\vite\bin\vite.js"
 ```
 backend/        FastAPI: api, auth, database, dashboards, email, ai, reports, services
 frontend/       React + TS + Vite, inicializado (ver seccion "Frontend")
+assets/         Estaticos compartidos entre dashboards (ej. logo corporativo
+                para encabezados de PDF), no especificos de ningun modulo
 data/           sistema.db, reportes/, uploads/
 Sobretiempo/    dashboard 1: normalizar_sobretiempo.py, generar_reporte_sobretiempo.py,
                 Ejecutar.txt, data/ (db + backups/ + reportes/, todo gitignored)

@@ -17,3 +17,12 @@ Ejemplo:
 "D:\People Data & Automation\venv\Scripts\python.exe" "D:\People Data & Automation\Sobretiempo\generar_reporte_sobretiempo.py"
 
 El archivo queda en: D:\People Data & Automation\Sobretiempo\data\reportes\
+
+--------------------------------------------------
+3) Generar los informes ejecutivos PDF, uno por Gerencia (sin necesitar el servidor prendido)
+--------------------------------------------------
+"D:\People Data & Automation\venv\Scripts\python.exe" "D:\People Data & Automation\Sobretiempo\generar_informes_gerencia.py"
+
+Genera un PDF por Gerencia (solo sus propios datos, para mandarselo a cada
+gerente). Los archivos quedan en:
+D:\People Data & Automation\Sobretiempo\data\reportes\gerencias\

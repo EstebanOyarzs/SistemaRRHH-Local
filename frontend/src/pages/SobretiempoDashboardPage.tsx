@@ -196,14 +196,79 @@ const COLUMNAS_ALERTA: Columna<CuentaConRitmo>[] = [
   },
 ];
 
-const COLUMNAS_TRANSACCIONES: Columna<Detalle>[] = [
-  { id: "nombre", label: "Nombre", valor: (d) => d.Nombre_Personal, render: (d) => d.Nombre_Personal },
-  { id: "cargo", label: "Cargo", valor: (d) => d.Cargo, render: (d) => d.Cargo },
-  { id: "gerencia", label: "Gerencia", valor: (d) => d.Gerencia, render: (d) => d.Gerencia },
-  { id: "concepto", label: "Concepto", valor: (d) => d.Concepto, render: (d) => d.Concepto },
-  { id: "horas", label: "Horas", valor: (d) => d.Cantidad_Horas, render: (d) => d.Cantidad_Horas },
-  { id: "importe", label: "Importe", valor: (d) => d.Importe, render: (d) => formatCurrency(d.Importe) },
+// "Ranking de Importe": una fila por persona (no por transacción — ver
+// CLAUDE.md "Patron de dashboards", sobretiempo_detalle trae un registro
+// por persona/Concepto/mes, así que sin agregar una misma persona aparecía
+// muchas veces, hasta repetida en el mismo Concepto). Se agrega por
+// Cod_SAP sumando Importe, con una columna de desglose por cada Concepto
+// (ademas del Total) para no perder el detalle que antes daba la columna
+// "Concepto" de una fila por transacción.
+const CONCEPTOS_RANKING = [
+  "Hora Extra",
+  "Turnos",
+  "Citación",
+  "Rot Horas Extra/Turnos",
+  "Bono Disponibilidad/Interluz/Alerta",
 ];
+
+interface PersonaImporte {
+  Cod_SAP: number;
+  Nombre_Personal: string;
+  Cargo: string;
+  Gerencia: string;
+  PorConcepto: Record<string, number>;
+  Total: number;
+}
+
+function agregarPorPersona(rows: Detalle[]): PersonaImporte[] {
+  const map = new Map<number, PersonaImporte>();
+  for (const d of rows) {
+    let persona = map.get(d.Cod_SAP);
+    if (!persona) {
+      persona = {
+        Cod_SAP: d.Cod_SAP,
+        Nombre_Personal: d.Nombre_Personal,
+        Cargo: d.Cargo,
+        Gerencia: d.Gerencia,
+        PorConcepto: {},
+        Total: 0,
+      };
+      map.set(d.Cod_SAP, persona);
+    }
+    persona.PorConcepto[d.Concepto] = (persona.PorConcepto[d.Concepto] ?? 0) + d.Importe;
+    persona.Total += d.Importe;
+  }
+  return Array.from(map.values());
+}
+
+// Labels acortados para las columnas de Concepto con nombres largos pero
+// pocas personas (ensanchaban la tabla sin aportar densidad de datos) — el
+// nombre completo queda como tooltip (title) en el header, ver `titulo`.
+const LABEL_CONCEPTO_CORTO: Record<string, string> = {
+  "Rot Horas Extra/Turnos": "Rot HE/Turnos",
+  "Bono Disponibilidad/Interluz/Alerta": "Bono Disp.",
+};
+
+// Arma las columnas del ranking a partir de los Concepto que SI tienen
+// datos en el alcance de filtros actual — un Concepto sin ninguna persona
+// (columna entera en $0) se oculta en vez de mostrarse vacía, a pedido del
+// usuario. `conceptosVisibles` ya viene filtrado (ver useMemo en el
+// componente), acá solo arma las definiciones de columna.
+function construirColumnasRanking(conceptosVisibles: string[]): Columna<PersonaImporte>[] {
+  return [
+    { id: "nombre", label: "Nombre", valor: (d) => d.Nombre_Personal, render: (d) => d.Nombre_Personal },
+    { id: "cargo", label: "Cargo", valor: (d) => d.Cargo, render: (d) => d.Cargo },
+    { id: "gerencia", label: "Gerencia", valor: (d) => d.Gerencia, render: (d) => d.Gerencia },
+    ...conceptosVisibles.map((concepto) => ({
+      id: `concepto-${concepto}`,
+      label: LABEL_CONCEPTO_CORTO[concepto] ?? concepto,
+      titulo: concepto,
+      valor: (d: PersonaImporte) => d.PorConcepto[concepto] ?? 0,
+      render: (d: PersonaImporte) => formatCurrency(d.PorConcepto[concepto] ?? 0),
+    })),
+    { id: "total", label: "Total", valor: (d) => d.Total, render: (d) => formatCurrency(d.Total) },
+  ];
+}
 
 type DimKey = "mes" | "sociedad" | "gerencia" | "subgerencia" | "unidad" | "ceco";
 
@@ -299,7 +364,7 @@ export function SobretiempoDashboardPage({ userRole, userName }: SobretiempoDash
   const [ordenColumna, setOrdenColumna] = useState("real");
   const [ordenAsc, setOrdenAsc] = useState(false);
 
-  const [ordenColumnaTx, setOrdenColumnaTx] = useState("importe");
+  const [ordenColumnaTx, setOrdenColumnaTx] = useState("total");
   const [ordenAscTx, setOrdenAscTx] = useState(false);
 
   const [ordenColumnaAlerta, setOrdenColumnaAlerta] = useState("pct");
@@ -560,9 +625,20 @@ export function SobretiempoDashboardPage({ userRole, userName }: SobretiempoDash
     }
   }
 
+  const rankingImporte = useMemo(() => agregarPorPersona(detalle), [detalle]);
+
+  const conceptosVisiblesRanking = useMemo(
+    () => CONCEPTOS_RANKING.filter((c) => rankingImporte.some((p) => (p.PorConcepto[c] ?? 0) !== 0)),
+    [rankingImporte],
+  );
+  const columnasRankingImporte = useMemo(
+    () => construirColumnasRanking(conceptosVisiblesRanking),
+    [conceptosVisiblesRanking],
+  );
+
   const transaccionesOrdenadas = useMemo(
-    () => ordenarFilas(detalle, COLUMNAS_TRANSACCIONES, ordenColumnaTx, ordenAscTx),
-    [detalle, ordenColumnaTx, ordenAscTx],
+    () => ordenarFilas(rankingImporte, columnasRankingImporte, ordenColumnaTx, ordenAscTx),
+    [rankingImporte, columnasRankingImporte, ordenColumnaTx, ordenAscTx],
   );
 
   function ordenarTransaccionesPor(id: string) {
@@ -750,7 +826,14 @@ export function SobretiempoDashboardPage({ userRole, userName }: SobretiempoDash
           <SearchableMultiSelect label="Gerencia" values={gerenciaFiltro} options={gerenciasDisponibles} onChange={setGerenciaFiltro} />
           <SearchableMultiSelect label="Subgerencia" values={subgerenciaFiltro} options={subgerenciasDisponibles} onChange={setSubgerenciaFiltro} />
           <SearchableMultiSelect label="Unidad" values={unidadFiltro} options={unidadesDisponibles} onChange={setUnidadFiltro} />
-          <SearchableMultiSelect label="Centro Costo" values={cecoFiltro} options={cecosDisponibles} placeholder="Todos" onChange={setCecoFiltro} />
+          <SearchableMultiSelect
+            label="Centro Costo"
+            values={cecoFiltro}
+            options={cecosDisponibles}
+            placeholder="Todos"
+            onChange={setCecoFiltro}
+            permitirSeleccionarTodo
+          />
           <SearchableMultiSelect label="Concepto" values={conceptoFiltro} options={conceptosDisponibles} placeholder="Todos" onChange={setConceptoFiltro} />
           <SearchableSelect label="Mes" value={mesFiltro} options={mesesDisponibles} onChange={setMesFiltro} />
         </div>
@@ -911,12 +994,16 @@ export function SobretiempoDashboardPage({ userRole, userName }: SobretiempoDash
 
         <div className="card sobretiempo__table-card">
           <h3>Ranking de Importe</h3>
+          <p className="sobretiempo__alerta-subcifra sobretiempo__alerta-subcifra--intro">
+            Una fila por persona, con el desglose por Concepto y el Total acumulado, dentro del
+            alcance de los filtros actuales.
+          </p>
           <div className="sobretiempo__table-wrap sobretiempo__table-wrap--scroll sobretiempo__table-wrap--rows10">
             <table>
               <thead>
                 <tr>
-                  {COLUMNAS_TRANSACCIONES.map((c) => (
-                    <th key={c.id}>
+                  {columnasRankingImporte.map((c) => (
+                    <th key={c.id} title={c.titulo}>
                       <button
                         type="button"
                         className="sobretiempo__th-sort"
@@ -932,9 +1019,9 @@ export function SobretiempoDashboardPage({ userRole, userName }: SobretiempoDash
                 </tr>
               </thead>
               <tbody>
-                {transaccionesOrdenadas.map((d, i) => (
-                  <tr key={i}>
-                    {COLUMNAS_TRANSACCIONES.map((c) => (
+                {transaccionesOrdenadas.map((d) => (
+                  <tr key={d.Cod_SAP}>
+                    {columnasRankingImporte.map((c) => (
                       <td key={c.id}>{c.render(d)}</td>
                     ))}
                   </tr>

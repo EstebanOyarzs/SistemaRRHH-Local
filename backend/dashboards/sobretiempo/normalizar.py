@@ -390,11 +390,23 @@ def construir_resumen(df_detalle, df_ppto):
     resumen["Horas_Real"] = resumen["Horas_Real"].fillna(0)
     resumen["Presupuesto"] = resumen["Presupuesto"].fillna(0)  # Sin Presupuesto -> 0
 
-    # ¿Esta línea (Sociedad+Ceco+Cuenta+Gerencia+Subgerencia+Unidad) tiene
-    # presupuesto asignado en algún mes del año?
-    tiene_ppto = ppto_agg.groupby(KEY_ORG)["Presupuesto"].sum()
-    tiene_ppto = (tiene_ppto > 0).rename("Con_Presupuesto_Asignado")
-    resumen = resumen.merge(tiene_ppto, on=KEY_ORG, how="left")
+    # "Con presupuesto asignado" se evalúa a nivel Ceco + Cuenta Contable
+    # (MISMO criterio que enriquecer_detalle()/construir_resumen_gerencia(),
+    # validado contra la presentación oficial — ver comentario en
+    # enriquecer_detalle). Ojo: NO se puede agrupar por KEY_ORG completo
+    # (incluyendo Gerencia/Subgerencia/Unidad) — un mismo Ceco+Cuenta puede
+    # tener presupuesto cargado bajo una Subgerencia y gasto real bajo otra
+    # (ej. una diferencia de mayúsculas entre la hoja PPTO y la hoja
+    # DETALLE, "Co Subgerencia..." vs "CO Subgerencia..."), y agrupar por
+    # KEY_ORG completo dejaba ese gasto afuera del "% Gastado" (bug
+    # encontrado 17-ago-2026 comparando el dashboard HTML contra el
+    # informe PDF: el HTML mostraba $3.600.948 gastado en Gerencia de
+    # Personas y el PDF/resumen_gerencia mostraba $9.930.397 — la cifra
+    # correcta es la del PDF, el HTML estaba excluyendo por error ~$6.3M
+    # de gasto real que sí tenía presupuesto asignado a su Ceco+Cuenta).
+    tiene_ppto = df_ppto.groupby(["Ceco", "Cuenta_Contable"])["Presupuesto"].sum()
+    tiene_ppto = (tiene_ppto > 0).rename("Con_Presupuesto_Asignado").reset_index()
+    resumen = resumen.merge(tiene_ppto, on=["Ceco", "Cuenta_Contable"], how="left")
     resumen["Con_Presupuesto_Asignado"] = resumen["Con_Presupuesto_Asignado"].fillna(False)
 
     resumen["Mes_Nombre"] = resumen["Mes_Num"].map(MESES_INV)

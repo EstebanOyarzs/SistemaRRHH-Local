@@ -10,6 +10,20 @@
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
+  /* Inmoviliza el header (titulo + filtros) al hacer scroll, como
+     "inmovilizar filas superiores" de Excel — asi los filtros quedan a
+     mano sin tener que volver arriba. Se pega tanto al contenedor con
+     scroll de AppLayout (.app-content) como al scroll del documento en el
+     HTML exportado standalone (ver exportarHtml.ts), porque sticky toma
+     el ancestro con scroll mas cercano en cada caso. El fondo tiene que
+     ser el mismo que el de la pagina (--color-gray-bg) para que el
+     contenido que pasa por debajo quede tapado en vez de transparentarse. */
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  background: var(--color-gray-bg);
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--color-gray-border);
 }
 
 .sobretiempo__subtitle {

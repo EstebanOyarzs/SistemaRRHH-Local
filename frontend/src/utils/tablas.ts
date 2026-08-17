@@ -5,6 +5,10 @@ export interface Columna<T> {
   label: string;
   valor: (row: T) => string | number;
   render: (row: T) => ReactNode;
+  // Texto completo para el atributo title del header, cuando el label se
+  // acorta para no ensanchar la columna (ver COLUMNAS_TRANSACCIONES en
+  // SobretiempoDashboardPage.tsx). Si no se pasa, se usa el label tal cual.
+  titulo?: string;
 }
 
 export function ordenarFilas<T>(rows: T[], columnas: Columna<T>[], columnaId: string, asc: boolean): T[] {
