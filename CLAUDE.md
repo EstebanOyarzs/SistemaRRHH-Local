@@ -121,6 +121,13 @@ Hecho:
   mismo problema; quedó corregido de raíz para toda carga futura, no solo
   para los datos ya cargados.
 
+- **Tercer dashboard: Asistencia (GeoVictoria)** (18-ago-2026) — a diferencia
+  de Sobretiempo/Capacitación, es un reporte HTML standalone sin backend/DB
+  propia (decisión explícita del usuario). Ver sección "Dashboard de
+  Asistencia (GeoVictoria)" más abajo para el detalle completo (gotchas de
+  normalización del Excel de origen, alertas por persona con 3 niveles,
+  identidad visual, filtros client-side en JS).
+
 Pendiente (orden sugerido, ver spec original del usuario para el detalle de cada módulo):
 1. Más planillas/dashboards siguiendo el mismo patrón que Sobretiempo/Capacitación
    (ver abajo), agregando su card en `frontend/src/pages/DashboardsHomePage.tsx`
@@ -574,6 +581,111 @@ varios puntos — documentados acá porque no son obvios releyendo el código:
   `frontend/src/utils/tablas.ts` (antes vivía duplicado dentro de
   `SobretiempoDashboardPage.tsx`) para que ambos dashboards lo compartan.
 
+## Dashboard de Asistencia (GeoVictoria) — reporte standalone, sin backend
+
+Tercer dashboard (18-ago-2026), pero con una decisión de arquitectura distinta
+a Sobretiempo/Capacitación: **NO sigue el "Patrón de dashboards"** (sin SQLite
+propia, sin router en `backend/`, sin página en `frontend/`) — es un único
+script Python que genera un HTML autocontenido, decisión explícita del
+usuario al elegir entre las dos opciones planteadas ("reporte HTML rápido" vs.
+"módulo completo integrado al sistema"). Si en el futuro se quiere el patrón
+completo (carga mensual vía botón, multiusuario en red, DB propia), hay que
+construirlo desde cero — este script no se pensó como base para eso.
+
+- **Qué es**: reporte de asistencia (control de ingreso/salida) a partir del
+  Excel "Gestión de Asistencia" que exporta el sistema GeoVictoria (transaccional,
+  una fila por persona+día). `Geovictoria/generar_reporte_asistencia.py`:
+  `venv\Scripts\python.exe Geovictoria\generar_reporte_asistencia.py "ruta\archivo.xlsx"`
+  (sin argumento, usa el Excel de ejemplo en `Geovictoria\Archivos ejemplo\`).
+  Guarda en `Geovictoria/data/reportes/` (gitignored, mismo motivo que
+  Sobretiempo/Capacitación — nombres/RUT reales). `Geovictoria/Archivos
+  ejemplo/*.xlsx` también gitignored.
+- **Toda la agregación vive en JavaScript, no en Python** (a diferencia de
+  Sobretiempo/Capacitación): `construir_datos_reporte()` en Python solo arma
+  `fecha_corte` + el detalle fila-por-fila (persona+día, con nombres de campo
+  cortos: `id/n/g/f/d/p/fcp/me/ms/am/lj/ht`) + listas de opciones para los
+  filtros. El HTML embebido recalcula KPIs/gráficos/tablas en el navegador
+  cada vez que cambia un filtro (`recalcular()` en `APP_JS`, dentro del mismo
+  archivo `.py`) — mismo patrón visual/UX que los filtros en cascada de
+  Sobretiempo, pero reimplementado en JS vanilla porque este reporte no reusa
+  ningún bundle de React (es 100% standalone). Si se cambia una regla de
+  negocio (ej. un umbral de alerta), hay que tocarla en el JS, Python ya no
+  tiene esa lógica.
+- **Filtros**: Unidad (= columna `Grupo` del Excel, renombrada en la UI),
+  Nombre y Apellido, Mes, Día — los primeros dos multi-selección con
+  buscador (componente `crearMultiSelect` en el JS embebido), Mes/Día también
+  multi-selección pero sin cascada entre sí (a diferencia de Sobretiempo, acá
+  las opciones de cada filtro son fijas, no se recalculan según los demás
+  filtros activos). Barra de filtros con `position: sticky; top: 0`.
+- **Gotchas de los datos de GeoVictoria, encontrados normalizando el Excel real**:
+  - **Un "Permiso" puede ser un beneficio permanente** (ej. "Amamantamiento")
+    que GeoVictoria marca en TODOS los días del mes de la persona, no solo el
+    día que realmente faltó — la persona igual marca entrada y trabaja normal
+    (con derecho a llegar más tarde). Por eso "falta explicada por permiso"
+    (`Falta_Con_Permiso`) exige ADEMÁS que no haya marcaje ese día puntual; si
+    hay Entrada marcada, cuenta como día asistido sin importar qué Permiso
+    tenga activo. Sin este chequeo, el % de Asistencia daba 0% para gente que
+    en realidad asistía todos los días.
+  - **"Atraso" ya viene en 0 desde GeoVictoria cuando hay justificación
+    escrita** (columna "Justificado" con texto tipo "trafico en ruta", "cita
+    medica") — comprobado contra el Excel real: NINGUNA fila con
+    justificación tiene `Atraso > 0`, aunque la hora de entrada sea
+    objetivamente posterior al inicio de turno. O sea, los atrasos que se
+    cuentan YA excluyen por diseño del propio Excel las llegadas tarde
+    perdonadas — no hace falta (ni se puede) filtrar "atrasos justificados"
+    aparte. La justificación se guarda solo como métrica informativa aparte
+    ("Llegadas justificadas").
+  - **No se rastrea colación**: el Excel trae dos pares Entró/Salió (uno para
+    colación, otro para el día completo) pero a pedido del usuario el reporte
+    no distingue entre ellos — "marcó salida" = tiene CUALQUIERA de las dos
+    salidas marcadas. Sin este criterio, ~2000 filas por mes salían como
+    "sin marcaje de salida" solo porque la persona no marca colación por
+    separado (usa un solo Entró/Salió para todo el día), un falso positivo
+    enorme.
+  - **"Marcaje incompleto"** (entró pero nunca marcó ninguna salida) excluye
+    el día de corte (hoy/último día con datos) — si no, todo el que llegó hoy
+    y aún no se fue aparece como "incompleto" aunque su jornada siga en curso
+    al momento de generar el reporte.
+  - **Valores de "Permiso" compuestos y sucios**: ej. `"Vacaciones;
+    Vacaciones"` (mismo permiso repetido con `;`) — `_normalizar_permiso()`
+    en `cargar_datos()` dedupea antes de agregar, si no el donut de "Uso de
+    permisos por tipo" contaba "Vacaciones" y esa variante como categorías
+    separadas.
+- **Alertas de asistencia**: tabla por persona con 3 niveles (Crítico /
+  Advertencia / **Leve**), combinando atrasos no justificados + ausencias
+  injustificadas + días sin marcaje de salida — "el peor de los tres
+  indicadores" gana. El nivel **Leve** (18-ago-2026, agregado a pedido del
+  usuario) es clave: sin él, alguien con 1-3 incidencias por debajo del
+  umbral de Advertencia no aparecía en la tabla aunque el KPI de arriba
+  mostrara `> 0` — confundía, sobre todo filtrando por un solo Día (donde los
+  umbrales absolutos casi nunca se alcanzan). Columna "Motivo" arma el texto
+  explicando cuál(es) indicador(es) dispararon el nivel. Cuadro resumen
+  arriba de la tabla ("X de Y personas presentan...") para que la alerta sea
+  visible sin tener que leer la tabla entera.
+- **Identidad visual**: paleta extraída del sitio real de GeoVictoria
+  (`geovictoria.com/es-cl`, azul `#00AFF2` / ámbar `#FFBB00`, tipografía
+  Nunito) — pero el **logo insertado en el encabezado
+  (`Geovictoria/logo.jpg`) es el logo del CLIENTE, no de GeoVictoria** (el
+  ícono es una casa con un enchufe, coherente con una empresa de energía/
+  utilities, no con un software de control de asistencia). Por eso el
+  subtítulo del reporte NO menciona "GeoVictoria" (18-ago-2026, corregido a
+  pedido del usuario — "no debe hacer referencia al sistema que usamos", ya
+  que GeoVictoria es solo la herramienta proveedora de los datos, el reporte
+  es para/del cliente). Ojo si se retoca el header: no reintroducir el nombre
+  del proveedor en texto visible.
+- **Gráficos**: Chart.js (mismo `chart.umd.min.js` de
+  `frontend/node_modules`, embebido inline) + `chartjs-plugin-datalabels`
+  (también embebido desde `frontend/node_modules/chartjs-plugin-datalabels/dist/`,
+  usado en el donut de permisos para mostrar % dentro de cada porción y en
+  las barras de "Atrasos por área" para mostrar el valor dentro de la barra).
+  "Evolución diaria" usa barras apiladas en vez de línea/área — con pocos
+  días filtrados (ej. un solo "Día" seleccionado) una línea queda como un par
+  de puntos sueltos casi invisibles, una barra apilada se centra sola sin
+  importar cuántas categorías haya. "Atrasos por área" no tiene tope de
+  cantidad (antes limitaba a un top 10) — el contenedor tiene alto fijo con
+  scroll interno (~10 filas visibles) y el alto del canvas se ajusta
+  dinámicamente según cuántas áreas tengan atrasos.
+
 ## Frontend
 
 React + TypeScript + Vite (`frontend/`), inicializado con `npm create vite@latest -- --template react-ts`.
@@ -961,6 +1073,9 @@ Sobretiempo/    dashboard 1: normalizar_sobretiempo.py, generar_reporte_sobretie
                 Ejecutar.txt, data/ (db + backups/ + reportes/, todo gitignored)
 Capacitacion/   dashboard 2: normalizar_capacitacion.py, generar_reporte_capacitacion.py,
                 Ejecutar.txt, data/ (db + backups/ + reportes/, todo gitignored)
+Geovictoria/    dashboard 3 (standalone, sin backend/DB): generar_reporte_asistencia.py,
+                logo.jpg (logo del cliente, no de GeoVictoria), Archivos ejemplo/ y
+                data/reportes/ gitignored
 models/         referencias/config de modelos IA locales
 onedrive_sync/  carpeta OneDrive sincronizada (se lee localmente, nunca via API)
 docs/           documentacion

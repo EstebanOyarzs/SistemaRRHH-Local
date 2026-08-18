@@ -29,6 +29,9 @@ Capacitacion/data/backups/
 Capacitacion/data/reportes/
 Capacitacion/Archivos Ejemplo/*.xlsx
 
+Geovictoria/data/reportes/
+Geovictoria/Archivos ejemplo/*.xlsx
+
 # Modelos IA (pesos, no versionar)
 models/*
 !models/.gitkeep
