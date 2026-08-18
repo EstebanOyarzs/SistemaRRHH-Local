@@ -130,6 +130,17 @@ def construir_datos_reporte(df: pd.DataFrame) -> dict:
 
     vigente = df[df["Fecha_dt"] <= fecha_corte].copy()
 
+    # Privacidad: el RUT (Identificador) NUNCA se escribe en el HTML — el
+    # reporte es un archivo estatico que puede circular fuera del control del
+    # sistema, y el RUT es un dato mas sensible que el nombre. Se reemplaza
+    # por un indice secuencial anonimo (1, 2, 3...), unico y estable dentro
+    # de este reporte, que cumple el mismo rol de "llave de persona" para
+    # agrupar (Alertas, Dotacion) sin arriesgar fusionar por error a dos
+    # personas con el mismo nombre (mismo motivo que Sobretiempo usa
+    # Cod_SAP en vez de Nombre_Personal para su ranking, ver CLAUDE.md).
+    ids_unicos = sorted(vigente["Identificador"].dropna().unique())
+    mapa_id = {rut: idx + 1 for idx, rut in enumerate(ids_unicos)}
+
     # Todos los KPIs/graficos/tablas se recalculan en el navegador (ver
     # APP_JS) para poder responder a los filtros (Unidad, Nombre, Mes, Dia)
     # sin volver a generar el reporte. Aca solo se exporta el detalle
@@ -137,7 +148,7 @@ def construir_datos_reporte(df: pd.DataFrame) -> dict:
     # de corte, con nombres de campo cortos para no inflar el HTML.
     filas = [
         {
-            "id": r["Identificador"],
+            "id": mapa_id[r["Identificador"]],
             "n": r["Nombre_Completo"],
             "g": r["Grupo"],
             "f": r["Fecha_dt"].isoformat(),

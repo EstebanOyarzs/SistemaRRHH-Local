@@ -665,6 +665,22 @@ construirlo desde cero — este script no se pensó como base para eso.
     en `cargar_datos()` dedupea antes de agregar, si no el donut de "Uso de
     permisos por tipo" contaba "Vacaciones" y esa variante como categorías
     separadas.
+- **El RUT (`Identificador`) nunca se escribe en el HTML** (18-ago-2026, a
+  pedido del usuario tras una conversación sobre privacidad de estos
+  reportes — ver también `.claude` memory "Seguridad reportes GeoVictoria"
+  para la propuesta de cifrado con contraseña que quedó pendiente de
+  retomar, y el "reportes por área" que el usuario descartó explícitamente).
+  El archivo `.html` es autocontenido y puede circular fuera del control del
+  sistema (email, USB, etc.) — el RUT es más sensible que el nombre, así que
+  `construir_datos_reporte()` arma un `mapa_id` (Identificador real → índice
+  secuencial 1, 2, 3... anónimo y estable dentro del reporte) ANTES de
+  armar `filas`, y exporta ese índice como `"id"` en vez del RUT. Sigue
+  sirviendo como llave única para agrupar (Dotación, Alertas por persona)
+  sin arriesgar fusionar por error a dos personas con el mismo nombre (mismo
+  motivo por el que Sobretiempo usa `Cod_SAP` en vez de `Nombre_Personal`
+  para su ranking) — solo que ya no expone el RUT real. Verificado:
+  Dotación/Atrasos/Ausencias dan los mismos números que antes del cambio
+  (183/162/30), no se rompió el agrupamiento.
 - **Alertas de asistencia**: tabla por persona con 3 niveles (Crítico /
   Advertencia / **Leve**), combinando atrasos no justificados + ausencias
   injustificadas + días sin marcaje de salida — "el peor de los tres
