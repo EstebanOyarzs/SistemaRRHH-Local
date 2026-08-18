@@ -635,6 +635,20 @@ construirlo desde cero — este script no se pensó como base para eso.
     perdonadas — no hace falta (ni se puede) filtrar "atrasos justificados"
     aparte. La justificación se guarda solo como métrica informativa aparte
     ("Llegadas justificadas").
+  - **"Atrasos no justificados" exige además `Permiso == "Ninguno"`** (fix
+    18-ago-2026, encontrado por el usuario comparando el KPI contra un
+    conteo manual filtrando el Excel — el dashboard mostraba 174, el usuario
+    contaba 162 filtrando `Atraso > 0` y `Permiso = "Ninguno"`). Causa raíz:
+    igual que con `Falta_Con_Permiso`, un atraso durante un permiso de fondo
+    activo (ej. Amamantamiento) SÍ se contaba como "no justificado" — la
+    persona del ejemplo real (María Francisca Elizalde Lastra) tenía 12
+    atrasos reales pero con Amamantamiento activo, y explicaban toda la
+    diferencia 174 vs 162. Fix: `atrasosFilas` (y su espejo dentro del loop
+    de `detalle por área`/`Evolución diaria` en el JS embebido) ahora exige
+    `r.am > 0 && r.p === 'Ninguno'`, mismo criterio que ya usaban las
+    ausencias injustificadas — consistente en KPI, "Atrasos por área",
+    "Evolución diaria" y la tabla de Alertas. Verificado: 162 coincide con
+    el conteo manual del usuario sobre el Excel real de agosto 2026.
   - **No se rastrea colación**: el Excel trae dos pares Entró/Salió (uno para
     colación, otro para el día completo) pero a pedido del usuario el reporte
     no distingue entre ellos — "marcó salida" = tiene CUALQUIERA de las dos

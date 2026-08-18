@@ -501,7 +501,12 @@ APP_JS = """
     var ausentesFilas = laborable.filter(function (r) { return !r.me; });
     var pctAsistencia = esperados ? Math.round((asistidos / esperados) * 1000) / 10 : 0;
 
-    var atrasosFilas = filas.filter(function (r) { return r.am > 0; });
+    // "No justificado" = igual criterio que las ausencias: Permiso debe ser
+    // "Ninguno". Si la persona llego tarde con un permiso de fondo activo
+    // (ej. Amamantamiento, que GeoVictoria marca en TODOS sus dias del mes)
+    // no cuenta aca — verificado 18-ago-2026 contra un conteo manual del
+    // usuario sobre el Excel (Atraso>0 y Permiso=Ninguno = 162 en agosto).
+    var atrasosFilas = filas.filter(function (r) { return r.am > 0 && r.p === 'Ninguno'; });
     var atrasosMinTotal = Math.round(atrasosFilas.reduce(function (s, r) { return s + r.am; }, 0));
 
     var llegadasJustificadas = filas.filter(function (r) { return !r.d && r.lj; }).length;
@@ -527,9 +532,9 @@ APP_JS = """
     var porFecha = {};
     laborable.forEach(function (r) {
       if (!porFecha[r.f]) porFecha[r.f] = { aTiempo: 0, atrasado: 0, ausente: 0 };
-      if (r.me && r.am === 0) porFecha[r.f].aTiempo++;
-      else if (r.me && r.am > 0) porFecha[r.f].atrasado++;
-      else porFecha[r.f].ausente++;
+      if (!r.me) porFecha[r.f].ausente++;
+      else if (r.am > 0 && r.p === 'Ninguno') porFecha[r.f].atrasado++;
+      else porFecha[r.f].aTiempo++;
     });
     var fechasOrdenadas = Object.keys(porFecha).sort();
     var evolucion = { labels: [], aTiempo: [], atrasado: [], ausente: [] };
@@ -547,7 +552,7 @@ APP_JS = """
       if (!porGrupo[r.g]) porGrupo[r.g] = { ids: new Set(), atrasos: 0, minAtraso: 0, ht: 0, labEsp: 0, labAsis: 0 };
       var G = porGrupo[r.g];
       G.ids.add(r.id);
-      if (r.am > 0) { G.atrasos++; G.minAtraso += r.am; }
+      if (r.am > 0 && r.p === 'Ninguno') { G.atrasos++; G.minAtraso += r.am; }
       G.ht += r.ht;
       if (!r.d && !r.fcp) { G.labEsp++; if (r.me) G.labAsis++; }
     });
@@ -619,9 +624,9 @@ APP_JS = """
     document.getElementById('kpis').innerHTML = [
       kpi('Dotacion', K.dotacion),
       kpi('% Asistencia', K.pct_asistencia + '%'),
+      kpi('Llegadas justificadas', K.llegadas_justificadas),
       kpi('Atrasos no justificados', K.atrasos_count, 'danger'),
       kpi('Minutos de atraso', K.atrasos_min_total, 'danger'),
-      kpi('Llegadas justificadas', K.llegadas_justificadas),
       kpi('Ausencias injustificadas', K.ausentes, 'danger'),
       kpi('Dias sin marcaje de salida', K.marcaje_incompleto, 'danger'),
     ].join('');
@@ -643,13 +648,33 @@ APP_JS = """
         { label: 'Ausente', data: [], backgroundColor: '#e2483a', maxBarThickness: 60 },
       ],
     },
+    plugins: [ChartDataLabels],
     options: {
       responsive: true, maintainAspectRatio: false,
       scales: {
         x: { stacked: true },
         y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
       },
-      plugins: { legend: { position: 'bottom' } },
+      plugins: {
+        legend: { position: 'bottom' },
+        datalabels: {
+          // Un solo % de asistencia por dia, mostrado dentro del segmento
+          // "A tiempo" (el mas grande de la barra apilada) — se calcula
+          // sumando A tiempo + Atrasado (ambos marcaron entrada) sobre el
+          // total del dia, mismo criterio que el % Asistencia del resumen.
+          display: function (ctx) { return ctx.datasetIndex === 0; },
+          color: '#ffffff', font: { weight: '700', size: 10 },
+          anchor: 'center', align: 'center',
+          formatter: function (value, ctx) {
+            var atrasado = ctx.chart.data.datasets[1].data[ctx.dataIndex] || 0;
+            var ausente = ctx.chart.data.datasets[2].data[ctx.dataIndex] || 0;
+            var total = value + atrasado + ausente;
+            if (!total) return '';
+            var pct = Math.round(((value + atrasado) / total) * 1000) / 10;
+            return pct + '%';
+          },
+        },
+      },
     },
   });
 
