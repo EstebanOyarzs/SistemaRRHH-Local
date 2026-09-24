@@ -9,8 +9,8 @@ siguiendo el mismo patron visual del dashboard de Sobretiempo pero en tonos
 azules.
 
 USO:
-    venv\\Scripts\\python.exe Geovictoria\\generar_reporte_asistencia.py "ruta\\archivo.xlsx"
-    venv\\Scripts\\python.exe Geovictoria\\generar_reporte_asistencia.py "ruta\\archivo.xlsx" "ruta\\salida.html"
+    venv\\Scripts\\python.exe "Control de Asistencia\\generar_reporte_asistencia.py" "ruta\\archivo.xlsx"
+    venv\\Scripts\\python.exe "Control de Asistencia\\generar_reporte_asistencia.py" "ruta\\archivo.xlsx" "ruta\\salida.html"
 
 Si no se pasa archivo, usa el Excel de ejemplo en "Archivos ejemplo/".
 ================================================================================
