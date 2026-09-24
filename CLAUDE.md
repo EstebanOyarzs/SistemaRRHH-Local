@@ -1,8 +1,12 @@
 # Sistema Web Local de Inteligencia Operacional
 
-Sistema on-premise (notebook Windows) con dashboards, IA local, generación de informes y
-automatización de Outlook. Corre en red local (LAN/VPN), sin publicar nada a Internet,
-costo operativo $0, sin servicios de IA pagados.
+Sistema on-premise (notebook Windows) de dashboards e informes de RRHH, con dos formas
+de uso: extraer reportes de forma local (scripts que generan un HTML autocontenido
+desde un Excel, sin servidor) o montarlo como servidor en red local (LAN/VPN) con
+login, roles/privilegios y vistas por usuario. Autenticación interna propia (no
+depende de Microsoft Entra ID ni de ningún proveedor externo). Hoy no tiene costos
+operativos ni depende de servicios de IA pagados, pero la arquitectura no lo impide —
+puede sumarse una API de IA de pago más adelante si hace falta más capacidad.
 
 Actuá como arquitecto de software senior y full-stack. Respetá las decisiones de
 arquitectura de este archivo salvo limitación técnica real (como ya ocurrió con Entra ID,
@@ -594,12 +598,15 @@ construirlo desde cero — este script no se pensó como base para eso.
 
 - **Qué es**: reporte de asistencia (control de ingreso/salida) a partir del
   Excel "Gestión de Asistencia" que exporta el sistema GeoVictoria (transaccional,
-  una fila por persona+día). `Geovictoria/generar_reporte_asistencia.py`:
-  `venv\Scripts\python.exe Geovictoria\generar_reporte_asistencia.py "ruta\archivo.xlsx"`
-  (sin argumento, usa el Excel de ejemplo en `Geovictoria\Archivos ejemplo\`).
-  Guarda en `Geovictoria/data/reportes/` (gitignored, mismo motivo que
-  Sobretiempo/Capacitación — nombres/RUT reales). `Geovictoria/Archivos
-  ejemplo/*.xlsx` también gitignored.
+  una fila por persona+día). Carpeta renombrada de `Geovictoria/` a
+  `Control de Asistencia/` (24-sep-2026, a pedido del usuario) — el codigo y
+  el contenido no cambiaron, solo el nombre de la carpeta.
+  `Control de Asistencia/generar_reporte_asistencia.py`:
+  `venv\Scripts\python.exe "Control de Asistencia\generar_reporte_asistencia.py" "ruta\archivo.xlsx"`
+  (sin argumento, usa el Excel de ejemplo en `Control de Asistencia\Archivos ejemplo\`).
+  Guarda en `Control de Asistencia/data/reportes/` (gitignored, mismo motivo
+  que Sobretiempo/Capacitación — nombres/RUT reales). `Control de
+  Asistencia/Archivos ejemplo/*.xlsx` también gitignored.
 - **Toda la agregación vive en JavaScript, no en Python** (a diferencia de
   Sobretiempo/Capacitación): `construir_datos_reporte()` en Python solo arma
   `fecha_corte` + el detalle fila-por-fila (persona+día, con nombres de campo
@@ -1103,9 +1110,12 @@ Sobretiempo/    dashboard 1: normalizar_sobretiempo.py, generar_reporte_sobretie
                 Ejecutar.txt, data/ (db + backups/ + reportes/, todo gitignored)
 Capacitacion/   dashboard 2: normalizar_capacitacion.py, generar_reporte_capacitacion.py,
                 Ejecutar.txt, data/ (db + backups/ + reportes/, todo gitignored)
-Geovictoria/    dashboard 3 (standalone, sin backend/DB): generar_reporte_asistencia.py,
-                logo.jpg (logo del cliente, no de GeoVictoria), Archivos ejemplo/ y
-                data/reportes/ gitignored
+Control de     dashboard 3 (standalone, sin backend/DB), ex "Geovictoria/" (renombrada
+Asistencia/     24-sep-2026): generar_reporte_asistencia.py, logo.jpg (logo del
+                cliente, no de GeoVictoria), Archivos ejemplo/ y data/reportes/ gitignored
+Viaticos/       dashboard 4 (standalone, sin backend/DB): normalizar_viaticos.py,
+                generar_reporte_viaticos.py, logo.png, Archivos/ y data/ (Excel
+                normalizado + reportes/) gitignored
 models/         referencias/config de modelos IA locales
 onedrive_sync/  carpeta OneDrive sincronizada (se lee localmente, nunca via API)
 docs/           documentacion
