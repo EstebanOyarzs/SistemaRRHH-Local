@@ -7,9 +7,12 @@ dos formas de uso:
   autocontenido (datos + graficos embebidos), sin servidor ni instalacion — se abre
   directo en el navegador. Asi funcionan hoy Sobretiempo, Capacitacion, Control de
   Asistencia y Viaticos.
-- **Montado como servidor**: el mismo sistema corre en la red local (LAN/VPN) con
-  login, roles/privilegios y vistas por usuario (autenticacion interna propia, sin
-  depender de Microsoft Entra ID ni de ningun proveedor externo de identidad).
+- **Montado como servidor**: el mismo sistema corre en la red local (LAN/VPN) o se
+  puede desplegar en un servicio externo (ej. Vercel) para acceder desde cualquier
+  dispositivo con internet, no solo en la red local. Con datos encriptados,
+  proteccion contra fuerza bruta en el login, y autenticacion de usuarios propia
+  con roles/privilegios y vistas por usuario (sin depender de Microsoft Entra ID
+  ni de ningun proveedor externo de identidad).
 
 No hay costos operativos ni dependencia de servicios de IA pagados por ahora, pero
 la arquitectura no lo impide — puede sumarse una API de IA de pago mas adelante si

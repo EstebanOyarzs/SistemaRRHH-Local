@@ -2,11 +2,14 @@
 
 Sistema on-premise (notebook Windows) de dashboards e informes de RRHH, con dos formas
 de uso: extraer reportes de forma local (scripts que generan un HTML autocontenido
-desde un Excel, sin servidor) o montarlo como servidor en red local (LAN/VPN) con
-login, roles/privilegios y vistas por usuario. Autenticación interna propia (no
-depende de Microsoft Entra ID ni de ningún proveedor externo). Hoy no tiene costos
-operativos ni depende de servicios de IA pagados, pero la arquitectura no lo impide —
-puede sumarse una API de IA de pago más adelante si hace falta más capacidad.
+desde un Excel, sin servidor) o montarlo como servidor en la red local (LAN/VPN) o en
+un servicio externo (ej. Vercel) para acceder desde cualquier dispositivo con
+internet. En el modo servidor: datos encriptados, protección contra fuerza bruta en
+el login, y autenticación de usuarios propia con roles/privilegios y vistas por
+usuario (no depende de Microsoft Entra ID ni de ningún proveedor externo). Hoy no
+tiene costos operativos ni depende de servicios de IA pagados, pero la arquitectura
+no lo impide — puede sumarse una API de IA de pago más adelante si hace falta más
+capacidad.
 
 Actuá como arquitecto de software senior y full-stack. Respetá las decisiones de
 arquitectura de este archivo salvo limitación técnica real (como ya ocurrió con Entra ID,
